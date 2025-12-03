@@ -41,6 +41,10 @@ Each release is built from a dedicated release branch.
 * Final tag : vX.Y.Z does not trigger the build but used for Release notes and assets.
 * After branch cut is created we monitor the main branch for any reverts and apply these reverts to a release branch.
 
+## Notable experimental features
+
+- Added an opt-in full-vocabulary logprobs “teacher mode” for OpenAI-compatible completions/chat. Launch with `--enable-full-logprobs-api`; requests must set `max_tokens=0`, `stream=false`, and will return base64-encoded fp16 logprobs per prompt token. Intended for distillation use-cases; higher model extraction risk by design.
+
 ## Release Cherry-Pick Criteria
 
 After branch cut, we approach finalizing the release branch with clear criteria on what cherry picks are allowed in. Note: a cherry pick is a process to land a PR in the release branch after branch cut. These are typically limited to ensure that the team has sufficient time to complete a thorough round of testing on a stable code base.

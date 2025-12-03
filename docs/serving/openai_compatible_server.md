@@ -198,6 +198,59 @@ The following extra parameters are supported:
     --8<-- "vllm/entrypoints/openai/protocol.py:completion-extra-params"
     ```
 
+#### Full logprobs teacher mode (experimental)
+
+vLLM can act as a forward-only “teacher” that returns full-vocabulary log-probabilities for every prompt token. This mode is disabled by default and must be explicitly enabled with `--enable-full-logprobs-api` because it increases model extraction risk.
+
+- Only available when `max_tokens=0` and `stream=false`; `n` must be 1.
+- Strongly recommended to send prompts as token IDs to avoid tokenizer mismatches.
+- Request payload (non-streaming) example:
+
+  ```json
+  POST /v1/completions
+  {
+    "model": "teacher-model-name",
+    "prompt": [101, 2045, 102],
+    "max_tokens": 0,
+    "stream": false,
+    "extra_body": {
+      "full_logprobs": {
+        "enabled": true,
+        "positions": [0, 2],        // optional subset; null/omitted returns all
+        "dtype": "fp16",
+        "format": "base64_dense"
+      }
+    }
+  }
+  ```
+
+- Response adds `choices[i].full_logprobs`:
+
+  ```json
+  "full_logprobs": {
+    "shape": [2, V],
+    "dtype": "fp16",
+    "format": "base64_dense",
+    "encoding": "base64",
+    "positions": [0, 2],
+    "data": "<base64 of row-major little-endian fp16 matrix>"
+  }
+  ```
+
+  Decode on the client with:
+
+  ```python
+  import base64, numpy as np
+  raw = base64.b64decode(data)
+  arr = np.frombuffer(raw, dtype="<f2").reshape(L_eff, V)
+  ```
+
+Notes:
+
+- The matrix holds **normalized log-probabilities** (`log_softmax`), not logits.
+- Chat completions support the same payload/semantics via `extra_body.full_logprobs`.
+- Host memory usage scales with `L * V` per request; use `positions` to reduce size.
+
 ### Chat API
 
 Our Chat API is compatible with [OpenAI's Chat Completions API](https://platform.openai.com/docs/api-reference/chat);
