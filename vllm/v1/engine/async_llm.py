@@ -124,6 +124,7 @@ class AsyncLLM(EngineClient):
             self.tokenizer,
             log_stats=self.log_stats,
             stream_interval=self.vllm_config.scheduler_config.stream_interval,
+            full_logprobs_buffer=self.input_processor.full_logprobs_buffer,
         )
         endpoint = self.observability_config.otlp_traces_endpoint
         if endpoint is not None:

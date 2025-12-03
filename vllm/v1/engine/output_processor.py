@@ -8,6 +8,8 @@ from typing import Any, cast
 
 import torch
 
+from vllm.full_logprobs import FullLogprobsBuffer
+from vllm.logger import init_logger
 from vllm.outputs import (
     CompletionOutput,
     PoolingOutput,
@@ -28,6 +30,8 @@ from vllm.v1.metrics.stats import (
     RequestStateStats,
     SchedulerStats,
 )
+
+logger = init_logger(__name__)
 
 
 class RequestOutputCollector:
@@ -345,6 +349,8 @@ class OutputProcessor:
         tokenizer: TokenizerLike | None,
         log_stats: bool,
         stream_interval: int = 1,
+        *,
+        full_logprobs_buffer: FullLogprobsBuffer | None = None,
     ):
         self.log_stats = log_stats
         self.tokenizer = tokenizer
@@ -355,6 +361,7 @@ class OutputProcessor:
         self.tracer: Tracer | None = None
         self._requests_drained = asyncio.Event()
         self._requests_drained.set()
+        self.full_logprobs_buffer = full_logprobs_buffer
 
     def get_num_unfinished_requests(self):
         return len(self.request_states)
@@ -470,6 +477,7 @@ class OutputProcessor:
         reqs_to_abort: list[str] = []
         for engine_core_output in engine_core_outputs:
             req_id = engine_core_output.request_id
+            self._handle_full_logprobs_chunks(req_id, engine_core_output)
             req_state = self.request_states.get(req_id)
             if req_state is None:
                 # Ignore output for already-aborted request.
@@ -543,6 +551,24 @@ class OutputProcessor:
             request_outputs=request_outputs,
             reqs_to_abort=reqs_to_abort,
         )
+
+    def _handle_full_logprobs_chunks(
+        self, request_id: str, engine_core_output: EngineCoreOutput
+    ) -> None:
+        if self.full_logprobs_buffer is None:
+            return
+        chunks = engine_core_output.full_logprobs_chunks
+        if not chunks:
+            return
+        for chunk in chunks:
+            try:
+                self.full_logprobs_buffer.add_chunk(request_id, chunk)
+            except ValueError:
+                logger.warning_once(
+                    "Received unexpected full logprobs chunk for request %s; dropping.",
+                    request_id,
+                )
+                break
 
     def update_scheduler_stats(self, scheduler_stats: SchedulerStats | None):
         self.lora_states.update_scheduler_stats(scheduler_stats)

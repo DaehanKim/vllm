@@ -9,7 +9,7 @@ from typing import Any
 import msgspec
 import torch
 
-from vllm.full_logprobs import FullLogprobsParams
+from vllm.full_logprobs import FullLogprobsChunk, FullLogprobsParams
 from vllm.lora.request import LoRARequest
 from vllm.multimodal.inputs import MultiModalFeatureSpec
 from vllm.pooling_params import PoolingParams
@@ -136,6 +136,7 @@ class EngineCoreOutput(
     # The number of NaNs in logits.
     # A value greater than 0 indicates that the output is corrupted.
     num_nans_in_logits: int = 0
+    full_logprobs_chunks: list[FullLogprobsChunk] | None = None
 
     @property
     def finished(self) -> bool:
