@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 import asyncio
+import base64
 import json
 import sys
 import time
@@ -70,6 +71,7 @@ from vllm.entrypoints.openai.protocol import (
     ChatCompletionResponse,
     CompletionRequest,
     CompletionResponse,
+    FullLogprobsResponse,
     DetokenizeRequest,
     ErrorInfo,
     ErrorResponse,
@@ -336,6 +338,29 @@ class OpenAIServing:
                 self._cleanup_full_logprobs_request(request_id)
 
         return _wrapped()
+
+    def _build_full_logprobs_response(
+        self, request_id: str
+    ) -> FullLogprobsResponse:
+        if request_id not in self._full_logprobs_request_ids:
+            raise ValueError(
+                f"full logprobs not registered for request {request_id}."
+            )
+
+        buffer = self.input_processor.full_logprobs_buffer
+        matrix = buffer.build_dense_array(request_id)
+        params = buffer.params_for(request_id)
+        matrix = np.array(matrix, dtype=np.dtype("<f2"), order="C", copy=False)
+        data = base64.b64encode(matrix.tobytes()).decode("ascii")
+        positions = list(params.positions) if params.positions is not None else None
+        return FullLogprobsResponse(
+            shape=matrix.shape,
+            dtype=params.dtype,
+            format=params.format,
+            encoding="base64",
+            positions=positions,
+            data=data,
+        )
 
     def _get_tool_parser(
         self, tool_parser_name: str | None = None, enable_auto_tools: bool = False

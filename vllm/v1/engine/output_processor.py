@@ -547,7 +547,6 @@ class OutputProcessor:
                     # detected stop string, abort needed in EngineCore.
                     reqs_to_abort.append(req_id)
 
-                self._cleanup_full_logprobs(req_id)
                 # Track per-request stats
                 self._update_stats_from_finished(
                     req_state, finish_reason, iteration_stats

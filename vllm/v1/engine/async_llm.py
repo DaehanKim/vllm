@@ -533,12 +533,6 @@ class AsyncLLM(EngineClient):
                             processed_outputs.reqs_to_abort
                         )
 
-                    for req_id in finished_requests:
-                        full_logprobs_cleanup(req_id)
-                    if outputs.wave_complete is not None and output_processor.request_states:
-                        for req_id in list(output_processor.request_states):
-                            full_logprobs_cleanup(req_id)
-
                     output_processor.update_scheduler_stats(outputs.scheduler_stats)
 
                     # 4) Logging.

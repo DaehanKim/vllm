@@ -20,6 +20,7 @@ from vllm.entrypoints.openai.protocol import (
     CompletionResponseStreamChoice,
     CompletionStreamResponse,
     ErrorResponse,
+    FullLogprobsResponse,
     PromptTokenUsageInfo,
     RequestResponseMetadata,
     UsageInfo,
@@ -251,11 +252,10 @@ class OpenAIServingCompletion(OpenAIServing):
                         tokenization_kwargs=tokenization_kwargs,
                         data_parallel_rank=data_parallel_rank,
                     )
-                    generator = self._wrap_full_logprobs_cleanup(
-                        request_id_item, generator
-                    )
-                    if needs_full_logprobs:
-                        pending_full_logprob_ids.remove(request_id_item)
+                    if not needs_full_logprobs:
+                        generator = self._wrap_full_logprobs_cleanup(
+                            request_id_item, generator
+                        )
 
                 generators.append(generator)
         except ValueError as e:
@@ -540,6 +540,25 @@ class OpenAIServingCompletion(OpenAIServing):
         num_generated_tokens = 0
         kv_transfer_params = None
         last_final_res = None
+        full_logprobs_enabled = bool(
+            request.full_logprobs and request.full_logprobs.enabled
+        )
+        full_logprobs_by_request: dict[str, FullLogprobsResponse] = {}
+
+        try:
+            if full_logprobs_enabled:
+                for final_res in final_res_batch:
+                    req_id = final_res.request_id
+                    if req_id in full_logprobs_by_request:
+                        continue
+                    full_logprobs_by_request[req_id] = (
+                        self._build_full_logprobs_response(req_id)
+                    )
+        finally:
+            if full_logprobs_enabled:
+                for req_id in {res.request_id for res in final_res_batch}:
+                    self._cleanup_full_logprobs_request(req_id)
+
         for final_res in final_res_batch:
             last_final_res = final_res
             prompt_token_ids = final_res.prompt_token_ids
@@ -595,6 +614,7 @@ class OpenAIServingCompletion(OpenAIServing):
                     index=len(choices),
                     text=output_text,
                     logprobs=logprobs,
+                    full_logprobs=full_logprobs_by_request.get(final_res.request_id),
                     finish_reason=output.finish_reason,
                     stop_reason=output.stop_reason,
                     prompt_logprobs=final_res.prompt_logprobs,

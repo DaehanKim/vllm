@@ -46,6 +46,7 @@ from vllm.entrypoints.openai.protocol import (
     DeltaMessage,
     DeltaToolCall,
     ErrorResponse,
+    FullLogprobsResponse,
     PromptTokenUsageInfo,
     RequestResponseMetadata,
     ToolCall,
@@ -361,11 +362,10 @@ class OpenAIServingChat(OpenAIServing):
                         tokenization_kwargs=tokenization_kwargs,
                         data_parallel_rank=data_parallel_rank,
                     )
-                    generator = self._wrap_full_logprobs_cleanup(
-                        sub_request_id, generator
-                    )
-                    if needs_full_logprobs:
-                        pending_full_logprob_ids.remove(sub_request_id)
+                    if not needs_full_logprobs:
+                        generator = self._wrap_full_logprobs_cleanup(
+                            sub_request_id, generator
+                        )
 
                 generators.append(generator)
         except ValueError as e:
@@ -1335,6 +1335,17 @@ class OpenAIServingChat(OpenAIServing):
 
         assert final_res is not None
 
+        full_logprobs_enabled = bool(
+            request.full_logprobs and request.full_logprobs.enabled
+        )
+        full_logprobs: FullLogprobsResponse | None = None
+        try:
+            if full_logprobs_enabled:
+                full_logprobs = self._build_full_logprobs_response(final_res.request_id)
+        finally:
+            if full_logprobs_enabled:
+                self._cleanup_full_logprobs_request(final_res.request_id)
+
         choices: list[ChatCompletionResponseChoice] = []
         if self.tool_call_id_type == "kimi_k2":
             history_tool_call_cnt = get_history_tool_calls_cnt(conversation)
@@ -1545,6 +1556,7 @@ class OpenAIServingChat(OpenAIServing):
                 index=output.index,
                 message=message,
                 logprobs=logprobs,
+                full_logprobs=full_logprobs,
                 finish_reason="tool_calls"
                 if is_finish_reason_tool_calls
                 else output.finish_reason

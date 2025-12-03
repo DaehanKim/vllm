@@ -94,6 +94,9 @@ def test_full_logprobs_cleanup_on_finish():
 
     output_processor.process_outputs([engine_output])
 
+    dense = buffer.build_dense_array(request_id)
+    np.testing.assert_array_equal(dense, row.reshape(1, vocab_size))
+    output_processor._cleanup_full_logprobs(request_id)
     with pytest.raises(ValueError, match="full logprobs not registered"):
         buffer.params_for(request_id)
 
