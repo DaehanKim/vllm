@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from http import HTTPStatus
 from typing import Any, ClassVar, Generic, TypeAlias, TypeVar
 
+from contextlib import aclosing
 import numpy as np
 import torch
 from fastapi import Request
@@ -282,6 +283,7 @@ class OpenAIServing:
         self.io_processor = self.models.io_processor
         self.model_config = self.models.model_config
         self.max_model_len = self.model_config.max_model_len
+        self._full_logprobs_request_ids: set[str] = set()
 
     def set_full_logprobs_api_enabled(self, enabled: bool) -> None:
         """Record whether the experimental full-logprobs API is enabled."""
@@ -297,6 +299,43 @@ class OpenAIServing:
                 "--enable-full-logprobs-api to allow teacher-mode requests."
             )
         )
+
+    def _track_full_logprobs_request(self, engine_request: EngineCoreRequest) -> None:
+        params = engine_request.full_logprobs_params
+        if params is None or not params.enabled:
+            return
+        self.input_processor.register_full_logprobs_request(
+            engine_request.request_id, params
+        )
+        self._full_logprobs_request_ids.add(engine_request.request_id)
+
+    def _cleanup_full_logprobs_request(self, request_id: str) -> None:
+        if request_id not in self._full_logprobs_request_ids:
+            return
+        self._full_logprobs_request_ids.discard(request_id)
+        self.input_processor.cleanup_full_logprobs_request(request_id)
+
+    def _cleanup_full_logprobs_requests(self, request_ids: Iterable[str]) -> None:
+        for request_id in request_ids:
+            self._cleanup_full_logprobs_request(request_id)
+
+    def _wrap_full_logprobs_cleanup(
+        self,
+        request_id: str,
+        generator: AsyncGenerator[RequestOutput, None],
+    ) -> AsyncGenerator[RequestOutput, None]:
+        if request_id not in self._full_logprobs_request_ids:
+            return generator
+
+        async def _wrapped():
+            try:
+                async with aclosing(generator) as agen:
+                    async for item in agen:
+                        yield item
+            finally:
+                self._cleanup_full_logprobs_request(request_id)
+
+        return _wrapped()
 
     def _get_tool_parser(
         self, tool_parser_name: str | None = None, enable_auto_tools: bool = False
@@ -1237,6 +1276,7 @@ class OpenAIServing:
             trace_headers=trace_headers,
             priority=priority,
         )
+        self._track_full_logprobs_request(engine_request)
         return engine_request, tokenization_kwargs
 
     async def _generate_with_builtin_tools(

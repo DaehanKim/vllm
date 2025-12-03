@@ -6,6 +6,7 @@ import pytest
 from vllm.assets.image import ImageAsset
 from vllm.assets.video import VideoAsset
 from vllm.config import CacheConfig, DeviceConfig, ModelConfig, VllmConfig
+from vllm.full_logprobs import FullLogprobsParams
 from vllm.sampling_params import SamplingParams
 from vllm.v1.engine import input_processor as input_processor_mod
 from vllm.v1.engine.input_processor import InputProcessor
@@ -33,6 +34,9 @@ def _mock_input_processor(
         "verify_with_parallel_config",
         lambda self, parallel_config: None,
         raising=True,
+    )
+    monkeypatch.setattr(
+        ModelConfig, "get_vocab_size", lambda self: 128, raising=True
     )
     monkeypatch.setattr(
         input_processor_mod,
@@ -183,6 +187,20 @@ def test_process_inputs_produces_full_logprobs_params(monkeypatch):
     assert engine_request.sampling_params is not None
     extra_args = engine_request.sampling_params.extra_args
     assert extra_args is None or "full_logprobs" not in extra_args
+
+
+def test_register_and_cleanup_full_logprobs_request(monkeypatch):
+    input_processor = _mock_input_processor(monkeypatch)
+    params = FullLogprobsParams(enabled=True, positions=[0])
+
+    input_processor.register_full_logprobs_request("req-teacher", params)
+    stored = input_processor.full_logprobs_buffer.params_for("req-teacher")
+    assert stored.enabled
+    assert stored.positions == [0]
+
+    input_processor.cleanup_full_logprobs_request("req-teacher")
+    with pytest.raises(ValueError, match="full logprobs not registered"):
+        input_processor.full_logprobs_buffer.params_for("req-teacher")
 
 
 def test_multi_modal_uuids_ignored_when_caching_disabled(monkeypatch):

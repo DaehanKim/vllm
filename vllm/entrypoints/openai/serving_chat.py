@@ -277,6 +277,7 @@ class OpenAIServingChat(OpenAIServing):
 
         # Schedule the request and get the result generator.
         generators: list[AsyncGenerator[RequestOutput, None]] = []
+        pending_full_logprob_ids: list[str] = []
         try:
             for i, engine_prompt in enumerate(engine_prompts):
                 prompt_text, _, _ = self._get_prompt_components(request_prompts[i])
@@ -342,6 +343,12 @@ class OpenAIServingChat(OpenAIServing):
                         trace_headers=trace_headers,
                         priority=request.priority,
                     )
+                    needs_full_logprobs = bool(
+                        engine_request.full_logprobs_params
+                        and engine_request.full_logprobs_params.enabled
+                    )
+                    if needs_full_logprobs:
+                        pending_full_logprob_ids.append(sub_request_id)
 
                     generator = self.engine_client.generate(
                         engine_request,
@@ -354,11 +361,20 @@ class OpenAIServingChat(OpenAIServing):
                         tokenization_kwargs=tokenization_kwargs,
                         data_parallel_rank=data_parallel_rank,
                     )
+                    generator = self._wrap_full_logprobs_cleanup(
+                        sub_request_id, generator
+                    )
+                    if needs_full_logprobs:
+                        pending_full_logprob_ids.remove(sub_request_id)
 
                 generators.append(generator)
         except ValueError as e:
+            self._cleanup_full_logprobs_requests(pending_full_logprob_ids)
             # TODO: Use a vllm-specific Validation Error
             return self.create_error_response(str(e))
+        except Exception:
+            self._cleanup_full_logprobs_requests(pending_full_logprob_ids)
+            raise
 
         assert len(generators) == 1
         (result_generator,) = generators

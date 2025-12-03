@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from typing import Any, Literal, cast
 
 from vllm.config import VllmConfig
-from vllm.full_logprobs import FullLogprobsParams
+from vllm.full_logprobs import FullLogprobsBuffer, FullLogprobsParams
 from vllm.inputs import ProcessorInputs, PromptType, SingletonInputs
 from vllm.inputs.parse import split_enc_dec_inputs
 from vllm.inputs.preprocess import InputPreprocessor
@@ -60,6 +60,7 @@ class InputProcessor:
             mm_registry,
             mm_processor_cache=self.mm_processor_cache,
         )
+        self.full_logprobs_buffer = FullLogprobsBuffer()
 
     @property
     def tokenizer(self) -> TokenizerLike | None:
@@ -398,6 +399,22 @@ class InputProcessor:
         if isinstance(payload, FullLogprobsParams):
             return payload
         return FullLogprobsParams(**payload)
+
+    def register_full_logprobs_request(
+        self, request_id: str, params: FullLogprobsParams | None
+    ) -> None:
+        """Register teacher-mode metadata for the request."""
+        if params is None or not params.enabled:
+            return
+        self.full_logprobs_buffer.register(
+            request_id,
+            vocab_size=self.model_config.get_vocab_size(),
+            params=params,
+        )
+
+    def cleanup_full_logprobs_request(self, request_id: str) -> None:
+        """Release any stored teacher-mode data for the request."""
+        self.full_logprobs_buffer.cleanup(request_id)
 
     def process_inputs(
         self,
