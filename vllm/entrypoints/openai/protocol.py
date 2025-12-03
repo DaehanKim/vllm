@@ -84,6 +84,14 @@ logger = init_logger(__name__)
 _LONG_INFO = torch.iinfo(torch.long)
 
 
+def _is_token_id_sequence(prompt: Any) -> bool:
+    return (
+        isinstance(prompt, list)
+        and len(prompt) > 0
+        and all(isinstance(tok, int) for tok in prompt)
+    )
+
+
 class OpenAIBaseModel(BaseModel):
     # OpenAI API does allow extra fields
     model_config = ConfigDict(extra="allow")
@@ -233,6 +241,25 @@ class FullLogprobsRequest(OpenAIBaseModel):
     )
     dtype: Literal["fp16"] = "fp16"
     format: Literal["base64_dense"] = "base64_dense"
+
+    @model_validator(mode="after")
+    def validate_positions(self):
+        if not self.enabled or self.positions is None:
+            return self
+        if len(self.positions) == 0:
+            raise ValueError("full_logprobs.positions cannot be empty when provided.")
+
+        last = -1
+        for pos in self.positions:
+            if pos < 0:
+                raise ValueError("full_logprobs.positions must be non-negative.")
+            if pos <= last:
+                raise ValueError(
+                    "full_logprobs.positions must be strictly increasing without "
+                    "duplicates."
+                )
+            last = pos
+        return self
 
 
 class FullLogprobsResponse(OpenAIBaseModel):
@@ -661,10 +688,6 @@ class ChatCompletionRequest(OpenAIBaseModel):
         default=None,
         description="Additional kwargs for structured outputs",
     )
-    full_logprobs: FullLogprobsRequest | None = Field(
-        default=None,
-        description="Request descriptor for forward-only full logprobs teacher mode.",
-    )
     priority: int = Field(
         default=0,
         description=(
@@ -1022,6 +1045,33 @@ class ChatCompletionRequest(OpenAIBaseModel):
             )
         return data
 
+    @model_validator(mode="after")
+    def validate_full_logprobs_teacher_mode(self):
+        fl = self.full_logprobs
+        if fl is None or not fl.enabled:
+            return self
+
+        if self.stream:
+            raise ValueError(
+                "full_logprobs teacher mode does not support streaming responses."
+            )
+
+        effective_n = 1 if self.n is None else self.n
+        if effective_n != 1:
+            raise ValueError("full_logprobs teacher mode only supports n=1.")
+
+        max_tokens = (
+            self.max_completion_tokens
+            if self.max_completion_tokens is not None
+            else self.max_tokens
+        )
+        if max_tokens != 0:
+            raise ValueError(
+                "full_logprobs teacher mode requires `max_completion_tokens` "
+                "or `max_tokens` to be set to 0."
+            )
+        return self
+
 
 class CompletionRequest(OpenAIBaseModel):
     # Ordered by official OpenAI API documentation
@@ -1363,6 +1413,35 @@ class CompletionRequest(OpenAIBaseModel):
                 "Parameter 'cache_salt' must be a non-empty string if provided."
             )
         return data
+
+    @model_validator(mode="after")
+    def validate_full_logprobs_teacher_mode(self):
+        fl = self.full_logprobs
+        if fl is None or not fl.enabled:
+            return self
+
+        if self.max_tokens != 0:
+            raise ValueError(
+                "full_logprobs teacher mode requires `max_tokens` to be set to 0."
+            )
+        if self.stream:
+            raise ValueError(
+                "full_logprobs teacher mode does not support streaming responses."
+            )
+        if self.n != 1:
+            raise ValueError("full_logprobs teacher mode only supports n=1.")
+        if self.prompt_embeds is not None:
+            raise ValueError(
+                "full_logprobs teacher mode only accepts token ID prompts, "
+                "not prompt_embeds."
+            )
+        prompt = self.prompt
+        if not _is_token_id_sequence(prompt):
+            raise ValueError(
+                "full_logprobs teacher mode requires `prompt` to be a non-empty "
+                "list of token IDs."
+            )
+        return self
 
 
 class CompletionLogProbs(OpenAIBaseModel):

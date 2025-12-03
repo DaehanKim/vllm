@@ -175,6 +175,11 @@ class OpenAIServingChat(OpenAIServing):
             logger.error("Error with model %s", error_check_ret)
             return error_check_ret
 
+        if request.full_logprobs and request.full_logprobs.enabled:
+            error_response = self.ensure_full_logprobs_api_enabled()
+            if error_response is not None:
+                return error_response
+
         # If the engine is dead, raise the engine's DEAD_ERROR.
         # This is required for the streaming case, where we return a
         # success status before we actually start generating text :).
