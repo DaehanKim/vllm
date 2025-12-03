@@ -381,6 +381,12 @@ class OutputProcessor:
             assert state.queue is not None
             state.queue.put(e)
 
+    def _cleanup_full_logprobs(self, request_id: str) -> None:
+        """Release any buffered full logprobs for the request."""
+        if self.full_logprobs_buffer is None:
+            return
+        self.full_logprobs_buffer.cleanup(request_id)
+
     def abort_requests(
         self,
         request_ids: Iterable[str],
@@ -413,6 +419,7 @@ class OutputProcessor:
                     child_reqs = self.abort_requests(child_reqs)
                     request_ids_to_abort.extend(child_reqs)
                 self.parent_requests.pop(request_id, None)
+            self._cleanup_full_logprobs(request_id)
         if not self.request_states:
             self._requests_drained.set()
         return request_ids_to_abort
@@ -540,6 +547,7 @@ class OutputProcessor:
                     # detected stop string, abort needed in EngineCore.
                     reqs_to_abort.append(req_id)
 
+                self._cleanup_full_logprobs(req_id)
                 # Track per-request stats
                 self._update_stats_from_finished(
                     req_state, finish_reason, iteration_stats

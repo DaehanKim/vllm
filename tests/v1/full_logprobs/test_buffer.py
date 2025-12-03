@@ -77,3 +77,55 @@ def test_duplicate_registration_rejected():
     buffer.register("req-4", vocab_size=1, params=params)
     with pytest.raises(ValueError):
         buffer.register("req-4", vocab_size=1, params=params)
+
+
+def test_build_dense_array_collects_out_of_order_chunks():
+    buffer = FullLogprobsBuffer()
+    params = FullLogprobsParams(enabled=True, positions=None)
+    request_id = "req-5"
+    vocab_size = 2
+    buffer.register(request_id, vocab_size=vocab_size, params=params)
+
+    # Deliver chunks out of order; buffer should sort and enforce contiguity.
+    buffer.add_chunk(
+        request_id,
+        FullLogprobsChunk(positions=[2], data=_row_bytes(vocab_size, 20.0)),
+    )
+    buffer.add_chunk(
+        request_id,
+        FullLogprobsChunk(
+            positions=[0, 1],
+            data=_row_bytes(vocab_size, 0.0) + _row_bytes(vocab_size, 10.0),
+        ),
+    )
+
+    matrix = buffer.build_dense_array(request_id)
+    assert matrix.shape == (3, vocab_size)
+    np.testing.assert_allclose(matrix[0], np.arange(vocab_size, dtype=np.float16))
+    np.testing.assert_allclose(matrix[1], np.arange(vocab_size, dtype=np.float16) + 10)
+    np.testing.assert_allclose(matrix[2], np.arange(vocab_size, dtype=np.float16) + 20)
+
+
+def test_positions_filter_across_multiple_chunks():
+    buffer = FullLogprobsBuffer()
+    params = FullLogprobsParams(enabled=True, positions=[0, 2])
+    request_id = "req-6"
+    vocab_size = 3
+    buffer.register(request_id, vocab_size=vocab_size, params=params)
+
+    buffer.add_chunk(
+        request_id,
+        FullLogprobsChunk(positions=[1], data=_row_bytes(vocab_size, 1.0)),
+    )
+    buffer.add_chunk(
+        request_id,
+        FullLogprobsChunk(
+            positions=[0, 2],
+            data=_row_bytes(vocab_size, 0.0) + _row_bytes(vocab_size, 2.0),
+        ),
+    )
+
+    matrix = buffer.build_dense_array(request_id)
+    assert matrix.shape == (2, vocab_size)
+    np.testing.assert_allclose(matrix[0], np.arange(vocab_size, dtype=np.float16))
+    np.testing.assert_allclose(matrix[1], np.arange(vocab_size, dtype=np.float16) + 2)

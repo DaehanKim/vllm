@@ -491,12 +491,14 @@ class AsyncLLM(EngineClient):
         log_stats = self.log_stats
         logger_manager = self.logger_manager
         input_processor = self.input_processor
+        full_logprobs_cleanup = input_processor.cleanup_full_logprobs_request
 
         async def output_handler():
             try:
                 while True:
                     # 1) Pull EngineCoreOutputs from the EngineCore.
                     outputs = await engine_core.get_output_async()
+                    finished_requests = outputs.finished_requests or ()
                     num_outputs = len(outputs.outputs)
 
                     iteration_stats = (
@@ -531,6 +533,12 @@ class AsyncLLM(EngineClient):
                             processed_outputs.reqs_to_abort
                         )
 
+                    for req_id in finished_requests:
+                        full_logprobs_cleanup(req_id)
+                    if outputs.wave_complete is not None and output_processor.request_states:
+                        for req_id in list(output_processor.request_states):
+                            full_logprobs_cleanup(req_id)
+
                     output_processor.update_scheduler_stats(outputs.scheduler_stats)
 
                     # 4) Logging.
@@ -556,6 +564,9 @@ class AsyncLLM(EngineClient):
             (request_id,) if isinstance(request_id, str) else as_list(request_id)
         )
         all_request_ids = self.output_processor.abort_requests(request_ids)
+        cleanup_ids = set(request_ids) | set(all_request_ids)
+        for req_id in cleanup_ids:
+            self.input_processor.cleanup_full_logprobs_request(req_id)
         await self.engine_core.abort_requests_async(all_request_ids)
 
         if self.log_requests:

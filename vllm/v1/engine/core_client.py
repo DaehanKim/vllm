@@ -863,7 +863,13 @@ class AsyncMPClient(MPClient):
                             return
                         await output_handler(_self, outputs)
 
-                    if outputs.outputs or outputs.scheduler_stats:
+                    if (
+                        outputs.outputs
+                        or outputs.scheduler_stats
+                        or outputs.finished_requests
+                        or outputs.wave_complete is not None
+                        or outputs.start_wave is not None
+                    ):
                         outputs_queue.put_nowait(outputs)
             except Exception as e:
                 outputs_queue.put_nowait(e)
