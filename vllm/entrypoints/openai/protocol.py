@@ -847,10 +847,12 @@ class ChatCompletionRequest(OpenAIBaseModel):
                 s_tag_obj = structural_tag.model_dump(by_alias=True)
                 self.structured_outputs.structural_tag = json.dumps(s_tag_obj)
 
-        extra_args: dict[str, Any] = self.vllm_xargs if self.vllm_xargs else {}
+        extra_args: dict[str, Any] = dict(self.vllm_xargs) if self.vllm_xargs else {}
         if self.kv_transfer_params:
             # Pass in kv_transfer_params via extra_args
             extra_args["kv_transfer_params"] = self.kv_transfer_params
+        if self.full_logprobs and self.full_logprobs.enabled:
+            extra_args["full_logprobs"] = self.full_logprobs.model_dump()
         return SamplingParams.from_optional(
             n=self.n,
             presence_penalty=self.presence_penalty,
@@ -1306,10 +1308,12 @@ class CompletionRequest(OpenAIBaseModel):
                 s_tag_obj = structural_tag.model_dump(by_alias=True)
                 self.structured_outputs.structural_tag = json.dumps(s_tag_obj)
 
-        extra_args: dict[str, Any] = self.vllm_xargs if self.vllm_xargs else {}
+        extra_args: dict[str, Any] = dict(self.vllm_xargs) if self.vllm_xargs else {}
         if self.kv_transfer_params:
             # Pass in kv_transfer_params via extra_args
             extra_args["kv_transfer_params"] = self.kv_transfer_params
+        if self.full_logprobs and self.full_logprobs.enabled:
+            extra_args["full_logprobs"] = self.full_logprobs.model_dump()
         return SamplingParams.from_optional(
             n=self.n,
             presence_penalty=self.presence_penalty,

@@ -9,6 +9,7 @@ import regex as re
 from openai import BadRequestError
 
 from tests.utils import RemoteOpenAIServer
+from vllm.entrypoints.openai.protocol import CompletionRequest
 from vllm.tokenizers import get_tokenizer
 
 # any model with a chat template should work here
@@ -685,3 +686,27 @@ async def test_invalid_grammar(client: openai.AsyncOpenAI, model_name: str):
                 "structured_outputs": {"grammar": invalid_simplified_sql_grammar}
             },
         )
+
+
+def test_completion_sampling_params_include_full_logprobs_extra_args() -> None:
+    req = CompletionRequest(
+        model="test-model",
+        prompt=[0, 1],
+        max_tokens=0,
+        full_logprobs={"enabled": True, "positions": [0, 1]},
+    )
+
+    params = req.to_sampling_params(
+        max_tokens=1,
+        logits_processor_pattern=None,
+        default_sampling_params={},
+    )
+
+    assert params.extra_args is not None
+    payload = params.extra_args.get("full_logprobs")
+    assert payload == {
+        "enabled": True,
+        "positions": [0, 1],
+        "dtype": "fp16",
+        "format": "base64_dense",
+    }
