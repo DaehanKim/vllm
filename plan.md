@@ -8,7 +8,7 @@
 
 ## Milestone 2 – Request metadata & buffer scaffolding (Commit 2)
 - [x] Define engine-level metadata in a new `vllm/full_logprobs.py` (or similar) module: a msgspec-friendly `FullLogprobsParams` struct, a `FullLogprobsChunk` struct (positions + row-major fp16 bytes), and a `FullLogprobsBuffer` helper keyed by `request_id` that stores `{position -> row data}` mappings and can emit `[L_eff, V]` slices respecting optional position filters. (commit b99ad5338)
-- [ ] Extend `EngineCoreRequest`/`Request` (files `vllm/v1/engine/__init__.py`, `vllm/v1/request.py`) with an optional `FullLogprobsParams` payload that lives next to sampling params (rather than inside `SamplingParams`) so the worker layer knows which requests need full logprobs and what positions/dtype/format to keep.
+- [x] Extend `EngineCoreRequest`/`Request` (files `vllm/v1/engine/__init__.py`, `vllm/v1/request.py`) with an optional `FullLogprobsParams` payload that lives next to sampling params (rather than inside `SamplingParams`) so the worker layer knows which requests need full logprobs and what positions/dtype/format to keep. (commit 40317c67d)
 - [ ] Update the `InputProcessor` (`vllm/v1/engine/input_processor.py`) and `OpenAIServing` base class so that, when a teacher-mode request is enqueued, we register it with the `FullLogprobsBuffer`, capture the target vocab size (`model_config.get_vocab_size()`), and ensure cleanup hooks exist for success/abort/timeouts.
 - [ ] Teach `EngineCoreOutputs`/`RequestOutput` plumbing (`vllm/v1/engine/__init__.py`, `vllm/v1/engine/output_processor.py`, `vllm/v1/engine/logprobs.py`) to carry opaque `FullLogprobsChunk` streams from the backend to the AsyncLLM process and to feed them into the buffer as soon as they arrive.
 
