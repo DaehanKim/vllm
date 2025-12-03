@@ -1,8 +1,8 @@
 # Full Logprobs (Spec v2.1) Implementation Plan
 
 ## Milestone 1 – API & CLI plumbing (Commit 1)
-- [x] Introduce a gated flag (`--enable-full-logprobs-api`) in `vllm/entrypoints/openai/cli_args.py`, thread it through `api_server.py` and store it on `OpenAIServing` so the server can hard fail requests when the flag is absent.
-- [x] Extend the OpenAI protocol models (`vllm/entrypoints/openai/protocol.py`) with `FullLogprobsRequest`/`FullLogprobsResponse` dataclasses, add a `full_logprobs` field to `CompletionRequest`/`ChatCompletionRequest`, and expose an optional `full_logprobs` payload on `CompletionResponseChoice` and `ChatCompletionResponseChoice`.
+- [x] Introduce a gated flag (`--enable-full-logprobs-api`) in `vllm/entrypoints/openai/cli_args.py`, thread it through `api_server.py` and store it on `OpenAIServing` so the server can hard fail requests when the flag is absent. (commit 49fe8e5a7)
+- [x] Extend the OpenAI protocol models (`vllm/entrypoints/openai/protocol.py`) with `FullLogprobsRequest`/`FullLogprobsResponse` dataclasses, add a `full_logprobs` field to `CompletionRequest`/`ChatCompletionRequest`, and expose an optional `full_logprobs` payload on `CompletionResponseChoice` and `ChatCompletionResponseChoice`. (commit 49fe8e5a7)
 - [ ] Push all teacher-mode validation (flag present, `max_tokens == 0`, `stream == false`, `n == 1`, prompt is token IDs vs text, dtype/format whitelist, position bounds) into the protocol/dataclass layer so any caller gets the same spec-synced error strings; `OpenAIServingCompletion` and `OpenAIServingChat` just surface the message when the CLI flag is off.
 - [ ] Thread the validated `FullLogprobsRequest` object through the existing rendering path so each scheduled request carries a normalized teacher-mode descriptor (needed for later milestones) and add regression coverage in `tests/v1/entrypoints/openai/test_completion.py` (and the chat variant) for the new validation paths.
 
