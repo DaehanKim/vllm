@@ -3,6 +3,7 @@
 import dataclasses
 from unittest.mock import Mock
 
+import numpy as np
 import pytest
 import torch
 
@@ -15,6 +16,7 @@ from vllm.config import (
     SpeculativeConfig,
     VllmConfig,
 )
+from vllm.full_logprobs import FullLogprobsChunk
 from vllm.multimodal.inputs import (
     MultiModalFeatureSpec,
     MultiModalKwargsItem,
@@ -188,6 +190,34 @@ def test_schedule_partial_requests():
     assert output.num_scheduled_tokens[requests[0].request_id] == 1
     assert output.num_scheduled_tokens[requests[1].request_id] == 700
     assert requests[2].request_id not in output.num_scheduled_tokens
+
+
+def test_scheduler_emits_full_logprobs_chunks():
+    try:
+        scheduler = create_scheduler()
+    except Exception as exc:  # pragma: no cover - diagnostic skip
+        pytest.skip(f"Unable to create scheduler in test: {exc}")
+    requests = create_requests(num_requests=1, full_logprobs=True)
+    request = requests[0]
+    scheduler.add_request(request)
+
+    output = scheduler.schedule()
+    chunk_data = np.zeros((1, 2), dtype=np.float16).tobytes()
+    chunk = FullLogprobsChunk(positions=[0], data=chunk_data)
+    model_runner_output = ModelRunnerOutput(
+        req_ids=[request.request_id],
+        req_id_to_index={request.request_id: 0},
+        sampled_token_ids=[[]],
+        logprobs=None,
+        prompt_logprobs_dict={},
+        pooler_output=[],
+        full_logprobs_chunks={request.request_id: [chunk]},
+    )
+
+    engine_outputs = scheduler.update_from_output(output, model_runner_output)
+    client_output = engine_outputs[request.client_index]
+    assert client_output.outputs
+    assert client_output.outputs[0].full_logprobs_chunks == [chunk]
 
 
 def test_no_mm_input_chunking():

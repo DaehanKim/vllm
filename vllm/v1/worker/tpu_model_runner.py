@@ -1318,6 +1318,7 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
             prompt_logprobs_dict=prompt_logprobs_dict,
             pooler_output=[],
             kv_connector_output=kv_connector_output,
+            full_logprobs_chunks=None,
         )
 
         # Check there are no new graphs compiled - all the graphs should be

@@ -13,6 +13,7 @@ from vllm.config import (
     SpeculativeConfig,
     VllmConfig,
 )
+from vllm.full_logprobs import FullLogprobsParams
 from vllm.multimodal.inputs import (
     MultiModalFeatureSpec,
     MultiModalKwargsItem,
@@ -171,6 +172,7 @@ def create_requests(
     same_prompt: bool = False,
     block_size: int = 16,
     req_ids: list[str] | None = None,
+    full_logprobs: bool = False,
 ) -> list[Request]:
     global _none_hash_initialized
     if not _none_hash_initialized:
@@ -243,6 +245,9 @@ def create_requests(
             mm_features=mm_features if mm_features else None,
             eos_token_id=EOS_TOKEN_ID,
             block_hasher=block_hasher,
+            full_logprobs_params=FullLogprobsParams(enabled=True)
+            if full_logprobs
+            else None,
         )
         requests.append(request)
     return requests

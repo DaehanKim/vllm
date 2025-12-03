@@ -974,6 +974,7 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
             pooler_output=[],
             kv_connector_output=None,
             num_nans_in_logits=None,
+            full_logprobs_chunks=None,
         )
         async_output = AsyncOutput(
             model_runner_output=model_runner_output,

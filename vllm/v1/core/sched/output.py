@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 from typing_extensions import deprecated
 
 from vllm._bc_linter import bc_linter_include
+from vllm.full_logprobs import FullLogprobsParams
 
 if TYPE_CHECKING:
     import numpy as np
@@ -43,6 +44,7 @@ class NewRequestData:
     num_computed_tokens: int
     lora_request: LoRARequest | None
     prompt_embeds: "torch.Tensor | None" = None
+    full_logprobs_params: FullLogprobsParams | None = None
 
     # Only used for v2 model runner.
     prefill_token_ids: list[int] | None = None
@@ -64,6 +66,7 @@ class NewRequestData:
             num_computed_tokens=request.num_computed_tokens,
             lora_request=request.lora_request,
             prompt_embeds=request.prompt_embeds,
+            full_logprobs_params=request.full_logprobs_params,
             prefill_token_ids=prefill_token_ids,
         )
 

@@ -16,6 +16,7 @@ import numpy as np
 import torch
 import torch.distributed
 import torch.nn as nn
+import torch.nn.functional as F
 from tqdm import tqdm
 
 import vllm.envs as envs
@@ -49,6 +50,7 @@ from vllm.distributed.parallel_state import (
     prepare_communication_buffer_for_model,
 )
 from vllm.forward_context import BatchDescriptor, set_forward_context
+from vllm.full_logprobs import FullLogprobsChunk
 from vllm.logger import init_logger
 from vllm.model_executor.layers.attention_layer_base import AttentionLayerBase
 from vllm.model_executor.layers.rotary_embedding import (
@@ -827,6 +829,7 @@ class GPUModelRunner(
                 num_computed_tokens=new_req_data.num_computed_tokens,
                 output_token_ids=[],
                 lora_request=new_req_data.lora_request,
+                full_logprobs_params=new_req_data.full_logprobs_params,
             )
             self.requests[req_id] = req_state
 
@@ -3093,6 +3096,50 @@ class GPUModelRunner(
         self.kv_connector_output = kv_connector_output
         return None
 
+    def _collect_full_logprobs_chunks(
+        self,
+        hidden_states: torch.Tensor,
+        num_scheduled_tokens: dict[str, int],
+    ) -> dict[str, list[FullLogprobsChunk]]:
+        if not num_scheduled_tokens:
+            return {}
+
+        chunks: dict[str, list[FullLogprobsChunk]] = {}
+        for req_id, num_tokens in num_scheduled_tokens.items():
+            if num_tokens <= 0:
+                continue
+            req_state = self.requests.get(req_id)
+            if req_state is None:
+                continue
+            params = getattr(req_state, "full_logprobs_params", None)
+            if params is None or not params.enabled:
+                continue
+
+            req_index = self.input_batch.req_id_to_index.get(req_id)
+            if req_index is None:
+                continue
+
+            start_pos = req_state.num_computed_tokens
+            remaining_prompt = max(req_state.num_prompt_tokens - start_pos, 0)
+            chunk_len = min(num_tokens, remaining_prompt)
+            if chunk_len <= 0:
+                continue
+
+            offset = int(self.query_start_loc.np[req_index])
+            prompt_hidden_states = hidden_states[offset : offset + chunk_len]
+            logits = self.model.compute_logits(prompt_hidden_states)
+            logprobs = F.log_softmax(logits, dim=-1, dtype=torch.float32).to(
+                torch.float16
+            )
+            logprobs_cpu = logprobs.to("cpu", non_blocking=True).contiguous()
+            data = logprobs_cpu.numpy().tobytes()
+            positions = list(range(start_pos, start_pos + chunk_len))
+            chunks.setdefault(req_id, []).append(
+                FullLogprobsChunk(positions=positions, data=data)
+            )
+
+        return chunks
+
     @torch.inference_mode
     def sample_tokens(
         self, grammar_output: "GrammarOutput | None"
@@ -3139,6 +3186,13 @@ class GPUModelRunner(
             sampler_output = self._sample(logits, spec_decode_metadata)
 
         self.input_batch.prev_sampled_token_ids = None
+
+        hidden_states_prefill = hidden_states[
+            : scheduler_output.total_num_scheduled_tokens
+        ]
+        full_logprobs_chunks = self._collect_full_logprobs_chunks(
+            hidden_states_prefill, scheduler_output.num_scheduled_tokens
+        )
 
         def propose_draft_token_ids(sampled_token_ids):
             assert spec_decode_common_attn_metadata is not None
@@ -3211,7 +3265,7 @@ class GPUModelRunner(
                 scheduler_output,
                 sampler_output,
                 logits,
-                hidden_states,
+                hidden_states_prefill,
                 scheduler_output.total_num_scheduled_tokens,
                 spec_decode_metadata,
             )
@@ -3241,6 +3295,7 @@ class GPUModelRunner(
                 else None,
                 num_nans_in_logits=num_nans_in_logits,
                 cudagraph_stats=cudagraph_stats,
+                full_logprobs_chunks=full_logprobs_chunks,
             )
 
         if not self.use_async_scheduling:

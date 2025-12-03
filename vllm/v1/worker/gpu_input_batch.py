@@ -8,6 +8,7 @@ from typing import cast
 import numpy as np
 import torch
 
+from vllm.full_logprobs import FullLogprobsParams
 from vllm.lora.request import LoRARequest
 from vllm.multimodal.inputs import MultiModalFeatureSpec
 from vllm.pooling_params import PoolingParams
@@ -47,6 +48,7 @@ class CachedRequestState:
 
     lora_request: LoRARequest | None = None
     prompt_embeds: torch.Tensor | None = None
+    full_logprobs_params: FullLogprobsParams | None = None
 
     # Used when both async_scheduling and spec_decode are enabled.
     prev_num_draft_len: int = 0

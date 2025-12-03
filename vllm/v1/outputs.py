@@ -9,6 +9,7 @@ import numpy as np
 import torch
 
 from vllm.compilation.cuda_graph import CUDAGraphStat
+from vllm.full_logprobs import FullLogprobsChunk
 from vllm.v1.core.sched.output import SchedulerOutput
 
 if TYPE_CHECKING:
@@ -173,6 +174,9 @@ class ModelRunnerOutput:
     # information related to cudagraph execution
     cudagraph_stats: CUDAGraphStat | None = None
 
+    # req_id -> list of full-logprobs chunks emitted in this step
+    full_logprobs_chunks: dict[str, list[FullLogprobsChunk]] | None = None
+
 
 # ModelRunnerOutput wrapper for async scheduling.
 class AsyncModelRunnerOutput(ABC):
@@ -227,6 +231,7 @@ def make_empty_encoder_model_runner_output(
         kv_connector_output=None,
         ec_connector_output=None,
         num_nans_in_logits=None,
+        full_logprobs_chunks=None,
     )
 
 
@@ -238,4 +243,5 @@ EMPTY_MODEL_RUNNER_OUTPUT = ModelRunnerOutput(
     prompt_logprobs_dict={},
     pooler_output=[],
     num_nans_in_logits=None,
+    full_logprobs_chunks=None,
 )
