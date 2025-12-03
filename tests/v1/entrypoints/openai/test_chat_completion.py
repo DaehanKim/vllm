@@ -1,9 +1,18 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+import base64
+
+import numpy as np
 import openai  # use the official client for correctness check
 import pytest
 import pytest_asyncio
+import torch
+
+try:
+    _ = torch.ops.vllm.dequant_mxfp4  # type: ignore[attr-defined]
+except (AttributeError, RuntimeError):
+    pytest.skip("custom ops not available; skipping OpenAI server tests", allow_module_level=True)
 
 from tests.utils import RemoteOpenAIServer
 from vllm.entrypoints.openai.protocol import ChatCompletionRequest
@@ -21,6 +30,7 @@ def default_server_args():
         "--max-num-seqs",
         "128",
         "--enforce-eager",
+        "--enable-full-logprobs-api",
     ]
 
 
@@ -139,6 +149,34 @@ async def test_invalid_grammar(client: openai.AsyncOpenAI, model_name: str):
                 "structured_outputs": {"grammar": invalid_simplified_sql_grammar}
             },
         )
+
+
+def _decode_full_logprobs(choice) -> np.ndarray:
+    assert choice.full_logprobs is not None
+    shape = tuple(choice.full_logprobs.shape)
+    raw = base64.b64decode(choice.full_logprobs.data)
+    return np.frombuffer(raw, dtype="<f2").reshape(shape)
+
+
+@pytest.mark.asyncio
+async def test_chat_full_logprobs(client: openai.AsyncOpenAI):
+    messages = [{"role": "user", "content": "hello"}]
+    chat = await client.chat.completions.create(
+        model=MODEL_NAME,
+        messages=messages,
+        max_tokens=0,
+        stream=False,
+        extra_body={"full_logprobs": {"enabled": True}},
+    )
+
+    choice = chat.choices[0]
+    full_lp = choice.full_logprobs
+    assert full_lp is not None
+
+    matrix = _decode_full_logprobs(choice)
+    np.testing.assert_allclose(np.exp(matrix[0]).sum(), 1.0, rtol=1e-2, atol=1e-2)
+    assert chat.usage.completion_tokens == 0
+    assert chat.usage.total_tokens == chat.usage.prompt_tokens
 
 
 @pytest.mark.asyncio

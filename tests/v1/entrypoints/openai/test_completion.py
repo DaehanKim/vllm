@@ -2,11 +2,23 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
 
+import base64
+
+import numpy as np
+import base64
+
+import numpy as np
 import openai  # use the official client for correctness check
 import pytest
 import pytest_asyncio
 import regex as re
+import torch
 from openai import BadRequestError
+
+try:
+    _ = torch.ops.vllm.dequant_mxfp4  # type: ignore[attr-defined]
+except (AttributeError, RuntimeError):
+    pytest.skip("custom ops not available; skipping OpenAI server tests", allow_module_level=True)
 
 from tests.utils import RemoteOpenAIServer
 from vllm.entrypoints.openai.protocol import CompletionRequest
@@ -27,6 +39,7 @@ def default_server_args():
         "128",
         "--enforce-eager",
         "--enable-prompt-tokens-details",
+        "--enable-full-logprobs-api",
     ]
 
 
@@ -686,6 +699,67 @@ async def test_invalid_grammar(client: openai.AsyncOpenAI, model_name: str):
                 "structured_outputs": {"grammar": invalid_simplified_sql_grammar}
             },
         )
+
+
+def _decode_full_logprobs(choice) -> np.ndarray:
+    assert choice.full_logprobs is not None
+    shape = tuple(choice.full_logprobs.shape)
+    raw = base64.b64decode(choice.full_logprobs.data)
+    return np.frombuffer(raw, dtype="<f2").reshape(shape)
+
+
+@pytest.mark.asyncio
+async def test_full_logprobs_token_ids(client: openai.AsyncOpenAI):
+    prompt_ids = [0, 1, 2]
+    completion = await client.completions.create(
+        model=MODEL_NAME,
+        prompt=prompt_ids,
+        max_tokens=0,
+        stream=False,
+        extra_body={"full_logprobs": {"enabled": True, "positions": [0, 2]}},
+    )
+
+    choice = completion.choices[0]
+    full_lp = choice.full_logprobs
+    assert full_lp is not None
+    assert tuple(full_lp.shape) == (2, full_lp.shape[1])
+    assert full_lp.positions == [0, 2]
+
+    matrix = _decode_full_logprobs(choice)
+    assert matrix.shape[0] == 2
+    np.testing.assert_allclose(np.exp(matrix[0]).sum(), 1.0, rtol=1e-2, atol=1e-2)
+    np.testing.assert_allclose(np.exp(matrix[1]).sum(), 1.0, rtol=1e-2, atol=1e-2)
+
+    assert completion.usage.completion_tokens == 0
+    assert completion.usage.prompt_tokens == len(prompt_ids)
+    assert completion.usage.total_tokens == len(prompt_ids)
+
+
+@pytest.mark.asyncio
+async def test_full_logprobs_text_prompt(client: openai.AsyncOpenAI):
+    prompt_text = "Hello world"
+    tokenizer = get_tokenizer(MODEL_NAME)
+    expected_len = len(tokenizer.encode(prompt_text))
+
+    completion = await client.completions.create(
+        model=MODEL_NAME,
+        prompt=prompt_text,
+        max_tokens=0,
+        stream=False,
+        extra_body={"full_logprobs": {"enabled": True}},
+    )
+
+    choice = completion.choices[0]
+    full_lp = choice.full_logprobs
+    assert full_lp is not None
+    assert tuple(full_lp.shape)[0] == expected_len
+    assert full_lp.positions is None
+
+    matrix = _decode_full_logprobs(choice)
+    np.testing.assert_allclose(np.exp(matrix[0]).sum(), 1.0, rtol=1e-2, atol=1e-2)
+    assert completion.usage.completion_tokens == 0
+    assert completion.usage.prompt_tokens == expected_len
+    assert completion.usage.total_tokens == expected_len
 
 
 def test_completion_sampling_params_include_full_logprobs_extra_args() -> None:
