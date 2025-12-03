@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any, Optional
 
 import torch
 
+from vllm.full_logprobs import FullLogprobsParams
 from vllm.multimodal.inputs import MultiModalFeatureSpec
 from vllm.pooling_params import PoolingParams
 from vllm.sampling_params import SamplingParams
@@ -44,6 +45,7 @@ class Request:
         priority: int = 0,
         trace_headers: Mapping[str, str] | None = None,
         block_hasher: Callable[["Request"], list["BlockHash"]] | None = None,
+        full_logprobs_params: FullLogprobsParams | None = None,
     ) -> None:
         self.request_id = request_id
         self.client_index = client_index
@@ -56,6 +58,7 @@ class Request:
         self.structured_output_request = StructuredOutputRequest.from_sampling_params(
             sampling_params
         )
+        self.full_logprobs_params = full_logprobs_params
         self.arrival_time = arrival_time if arrival_time is not None else time.time()
 
         self.status = RequestStatus.WAITING
@@ -158,6 +161,7 @@ class Request:
             priority=request.priority,
             trace_headers=request.trace_headers,
             block_hasher=block_hasher,
+            full_logprobs_params=request.full_logprobs_params,
         )
 
     def append_output_token_ids(

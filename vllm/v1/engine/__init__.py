@@ -9,6 +9,7 @@ from typing import Any
 import msgspec
 import torch
 
+from vllm.full_logprobs import FullLogprobsParams
 from vllm.lora.request import LoRARequest
 from vllm.multimodal.inputs import MultiModalFeatureSpec
 from vllm.pooling_params import PoolingParams
@@ -71,6 +72,7 @@ class EngineCoreRequest(
     priority: int = 0
 
     trace_headers: Mapping[str, str] | None = None
+    full_logprobs_params: FullLogprobsParams | None = None
 
     @property
     def params(self) -> SamplingParams | PoolingParams:

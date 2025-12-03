@@ -159,6 +159,32 @@ def test_multi_modal_uuids_accepts_none_and_passes_through(
     assert captured["mm_uuids"] == mm_uuids
 
 
+def test_process_inputs_produces_full_logprobs_params(monkeypatch):
+    input_processor = _mock_input_processor(monkeypatch)
+
+    def fake_preprocess(prompt, *, tokenization_kwargs=None, mm_uuids=None):
+        return {"type": "token", "prompt_token_ids": [1, 2]}
+
+    monkeypatch.setattr(
+        input_processor.input_preprocessor, "preprocess", fake_preprocess, raising=True
+    )
+
+    params = SamplingParams(max_tokens=1)
+    params.extra_args = {"full_logprobs": {"enabled": True, "positions": [0, 1]}}
+
+    engine_request = input_processor.process_inputs(
+        request_id="req-full-logprob",
+        prompt="Hello",
+        params=params,
+    )
+
+    assert engine_request.full_logprobs_params is not None
+    assert engine_request.full_logprobs_params.positions == [0, 1]
+    assert engine_request.sampling_params is not None
+    extra_args = engine_request.sampling_params.extra_args
+    assert extra_args is None or "full_logprobs" not in extra_args
+
+
 def test_multi_modal_uuids_ignored_when_caching_disabled(monkeypatch):
     # When both processor cache is 0 and prefix caching disabled, the
     # processor builds overrides from request id instead of using user UUIDs.

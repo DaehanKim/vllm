@@ -6,6 +6,7 @@ from collections.abc import Mapping
 from typing import Any, Literal, cast
 
 from vllm.config import VllmConfig
+from vllm.full_logprobs import FullLogprobsParams
 from vllm.inputs import ProcessorInputs, PromptType, SingletonInputs
 from vllm.inputs.parse import split_enc_dec_inputs
 from vllm.inputs.preprocess import InputPreprocessor
@@ -382,6 +383,22 @@ class InputProcessor:
             mm_uuids[modality] = [f"{request_id}-{modality}-{i}" for i in range(n)]
         return mm_uuids
 
+    @staticmethod
+    def _pop_full_logprobs_params(
+        sampling_params: SamplingParams,
+    ) -> FullLogprobsParams | None:
+        extra_args = sampling_params.extra_args
+        if not extra_args:
+            return None
+        payload = extra_args.pop("full_logprobs", None)
+        if not extra_args:
+            sampling_params.extra_args = None
+        if payload is None:
+            return None
+        if isinstance(payload, FullLogprobsParams):
+            return payload
+        return FullLogprobsParams(**payload)
+
     def process_inputs(
         self,
         request_id: str,
@@ -466,6 +483,7 @@ class InputProcessor:
 
         sampling_params = None
         pooling_params = None
+        full_logprobs_params: FullLogprobsParams | None = None
         if isinstance(params, SamplingParams):
             # TODO: can we avoid cloning here in multiproc case?
             sampling_params = params.clone()
@@ -480,6 +498,7 @@ class InputProcessor:
             )
             if self.tokenizer is not None:
                 sampling_params.update_from_tokenizer(self.tokenizer)
+            full_logprobs_params = self._pop_full_logprobs_params(sampling_params)
         else:
             pooling_params = params.clone()
 
@@ -521,6 +540,7 @@ class InputProcessor:
             priority=priority,
             data_parallel_rank=data_parallel_rank,
             trace_headers=trace_headers,
+            full_logprobs_params=full_logprobs_params,
         )
 
     def _validate_model_inputs(
