@@ -44,6 +44,7 @@ Each release is built from a dedicated release branch.
 ## Notable experimental features
 
 - Added an opt-in full-vocabulary logprobs “teacher mode” for OpenAI-compatible completions/chat. Launch with `--enable-full-logprobs-api`; requests must set `max_tokens=0`, `stream=false`, and will return base64-encoded fp16 logprobs per prompt token. Intended for distillation use-cases; higher model extraction risk by design.
+- Documentation: see `docs/serving/full_logprobs_teacher_mode.md` for payload/response examples and decoding notes.
 
 ## Release Cherry-Pick Criteria
 

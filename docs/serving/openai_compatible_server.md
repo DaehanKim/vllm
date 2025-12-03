@@ -251,6 +251,8 @@ Notes:
 - Chat completions support the same payload/semantics via `extra_body.full_logprobs`.
 - Host memory usage scales with `L * V` per request; use `positions` to reduce size.
 
+More details: `docs/serving/full_logprobs_teacher_mode.md`.
+
 ### Chat API
 
 Our Chat API is compatible with [OpenAI's Chat Completions API](https://platform.openai.com/docs/api-reference/chat);
