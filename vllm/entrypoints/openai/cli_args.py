@@ -178,6 +178,9 @@ class FrontendArgs:
     enable_tokenizer_info_endpoint: bool = False
     """Enable the /get_tokenizer_info endpoint. May expose chat
     templates and other tokenizer configuration."""
+    enable_full_logprobs_api: bool = False
+    """Enable the experimental full-logprobs teacher API. Gate the
+    feature behind an explicit opt-in flag to avoid accidental exposure."""
     enable_log_outputs: bool = False
     """If True, log model outputs (generations).
     Requires --enable-log-requests."""

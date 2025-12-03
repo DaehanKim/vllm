@@ -39,7 +39,10 @@ from unittest.mock import patch
 import torch
 import torch.distributed
 import torch.distributed._functional_collectives as funcol
-import torch.distributed._symmetric_memory
+try:
+    import torch.distributed._symmetric_memory  # type: ignore
+except ImportError:  # pragma: no cover - older PyTorch builds
+    torch.distributed._symmetric_memory = None  # type: ignore[attr-defined]
 from torch.distributed import Backend, ProcessGroup
 
 import vllm.envs as envs

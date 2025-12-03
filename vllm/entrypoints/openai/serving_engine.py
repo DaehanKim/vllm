@@ -276,11 +276,27 @@ class OpenAIServing:
 
         self._async_tokenizer_pool: dict[TokenizerLike, AsyncMicrobatchTokenizer] = {}
         self.log_error_stack = log_error_stack
+        self.full_logprobs_api_enabled = False
 
         self.input_processor = self.models.input_processor
         self.io_processor = self.models.io_processor
         self.model_config = self.models.model_config
         self.max_model_len = self.model_config.max_model_len
+
+    def set_full_logprobs_api_enabled(self, enabled: bool) -> None:
+        """Record whether the experimental full-logprobs API is enabled."""
+        self.full_logprobs_api_enabled = enabled
+
+    def ensure_full_logprobs_api_enabled(self) -> ErrorResponse | None:
+        """Return a standardized error if the full-logprobs API is disabled."""
+        if self.full_logprobs_api_enabled:
+            return None
+        return self.create_error_response(
+            message=(
+                "full logprobs API is disabled on this server. Restart with "
+                "--enable-full-logprobs-api to allow teacher-mode requests."
+            )
+        )
 
     def _get_tool_parser(
         self, tool_parser_name: str | None = None, enable_auto_tools: bool = False

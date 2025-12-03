@@ -1119,6 +1119,11 @@ async def init_app_state(
         lora_modules=lora_modules,
     )
     await state.openai_serving_models.init_static_loras()
+
+    def _set_full_logprobs_flag(serving_obj: OpenAIServing | None) -> None:
+        if serving_obj is not None:
+            serving_obj.set_full_logprobs_api_enabled(args.enable_full_logprobs_api)
+
     state.openai_serving_responses = (
         OpenAIServingResponses(
             engine_client,
@@ -1139,6 +1144,7 @@ async def init_app_state(
         if "generate" in supported_tasks
         else None
     )
+    _set_full_logprobs_flag(state.openai_serving_responses)
     state.openai_serving_chat = (
         OpenAIServingChat(
             engine_client,
@@ -1161,6 +1167,7 @@ async def init_app_state(
         if "generate" in supported_tasks
         else None
     )
+    _set_full_logprobs_flag(state.openai_serving_chat)
     state.openai_serving_completion = (
         OpenAIServingCompletion(
             engine_client,
@@ -1174,6 +1181,7 @@ async def init_app_state(
         if "generate" in supported_tasks
         else None
     )
+    _set_full_logprobs_flag(state.openai_serving_completion)
     state.openai_serving_pooling = (
         (
             OpenAIServingPooling(
@@ -1190,6 +1198,7 @@ async def init_app_state(
         if any(task in POOLING_TASKS for task in supported_tasks)
         else None
     )
+    _set_full_logprobs_flag(state.openai_serving_pooling)
     state.openai_serving_embedding = (
         OpenAIServingEmbedding(
             engine_client,
@@ -1203,6 +1212,7 @@ async def init_app_state(
         if "embed" in supported_tasks
         else None
     )
+    _set_full_logprobs_flag(state.openai_serving_embedding)
     state.openai_serving_classification = (
         ServingClassification(
             engine_client,
@@ -1216,6 +1226,7 @@ async def init_app_state(
         if "classify" in supported_tasks
         else None
     )
+    _set_full_logprobs_flag(state.openai_serving_classification)
     state.openai_serving_scores = (
         ServingScores(
             engine_client,
@@ -1226,6 +1237,7 @@ async def init_app_state(
         if ("embed" in supported_tasks or "score" in supported_tasks)
         else None
     )
+    _set_full_logprobs_flag(state.openai_serving_scores)
     state.openai_serving_tokenization = OpenAIServingTokenization(
         engine_client,
         state.openai_serving_models,
@@ -1235,6 +1247,7 @@ async def init_app_state(
         trust_request_chat_template=args.trust_request_chat_template,
         log_error_stack=args.log_error_stack,
     )
+    _set_full_logprobs_flag(state.openai_serving_tokenization)
     state.openai_serving_transcription = (
         OpenAIServingTranscription(
             engine_client,
@@ -1246,6 +1259,7 @@ async def init_app_state(
         if "transcription" in supported_tasks
         else None
     )
+    _set_full_logprobs_flag(state.openai_serving_transcription)
     state.openai_serving_translation = (
         OpenAIServingTranslation(
             engine_client,
@@ -1257,6 +1271,7 @@ async def init_app_state(
         if "transcription" in supported_tasks
         else None
     )
+    _set_full_logprobs_flag(state.openai_serving_translation)
     state.anthropic_serving_messages = (
         AnthropicServingMessages(
             engine_client,
@@ -1275,6 +1290,7 @@ async def init_app_state(
         if "generate" in supported_tasks
         else None
     )
+    _set_full_logprobs_flag(state.anthropic_serving_messages)
     state.serving_tokens = (
         ServingTokens(
             engine_client,
@@ -1289,6 +1305,7 @@ async def init_app_state(
         if "generate" in supported_tasks
         else None
     )
+    _set_full_logprobs_flag(state.serving_tokens)
 
     state.enable_server_load_tracking = args.enable_server_load_tracking
     state.server_load_metrics = 0

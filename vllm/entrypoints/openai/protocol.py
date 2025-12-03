@@ -223,6 +223,27 @@ class StreamOptions(OpenAIBaseModel):
     continuous_usage_stats: bool | None = False
 
 
+class FullLogprobsRequest(OpenAIBaseModel):
+    enabled: bool = False
+    positions: list[int] | None = Field(
+        default=None,
+        description=(
+            "Absolute token indices to compute, or None for the entire sequence."
+        ),
+    )
+    dtype: Literal["fp16"] = "fp16"
+    format: Literal["base64_dense"] = "base64_dense"
+
+
+class FullLogprobsResponse(OpenAIBaseModel):
+    shape: tuple[int, int]
+    dtype: Literal["fp16"] = "fp16"
+    format: Literal["base64_dense"] = "base64_dense"
+    encoding: Literal["base64"] = "base64"
+    positions: list[int] | None = None
+    data: str
+
+
 class FunctionDefinition(OpenAIBaseModel):
     name: str
     description: str | None = None
@@ -628,6 +649,10 @@ class ChatCompletionRequest(OpenAIBaseModel):
             "Will be accessible by the chat template."
         ),
     )
+    full_logprobs: FullLogprobsRequest | None = Field(
+        default=None,
+        description="Request descriptor for forward-only full logprobs teacher mode.",
+    )
     mm_processor_kwargs: dict[str, Any] | None = Field(
         default=None,
         description=("Additional kwargs to pass to the HF processor."),
@@ -635,6 +660,10 @@ class ChatCompletionRequest(OpenAIBaseModel):
     structured_outputs: StructuredOutputsParams | None = Field(
         default=None,
         description="Additional kwargs for structured outputs",
+    )
+    full_logprobs: FullLogprobsRequest | None = Field(
+        default=None,
+        description="Request descriptor for forward-only full logprobs teacher mode.",
     )
     priority: int = Field(
         default=0,
@@ -1053,6 +1082,10 @@ class CompletionRequest(OpenAIBaseModel):
         default=None,
         description="Additional kwargs for structured outputs",
     )
+    full_logprobs: FullLogprobsRequest | None = Field(
+        default=None,
+        description="Request descriptor for forward-only full logprobs teacher mode.",
+    )
     priority: int = Field(
         default=0,
         description=(
@@ -1343,6 +1376,7 @@ class CompletionResponseChoice(OpenAIBaseModel):
     index: int
     text: str
     logprobs: CompletionLogProbs | None = None
+    full_logprobs: FullLogprobsResponse | None = None
     finish_reason: str | None = None
     stop_reason: int | str | None = Field(
         default=None,
@@ -1479,6 +1513,7 @@ class ChatCompletionResponseChoice(OpenAIBaseModel):
     index: int
     message: ChatMessage
     logprobs: ChatCompletionLogProbs | None = None
+    full_logprobs: FullLogprobsResponse | None = None
     # per OpenAI spec this is the default
     finish_reason: str | None = "stop"
     # not part of the OpenAI spec but included in vLLM for legacy reasons

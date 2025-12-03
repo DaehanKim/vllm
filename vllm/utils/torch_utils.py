@@ -13,7 +13,14 @@ import numpy.typing as npt
 import torch
 from packaging import version
 from packaging.version import Version
-from torch.library import Library, infer_schema
+
+from vllm.logger import init_logger
+try:
+    from torch.library import Library, infer_schema
+except ImportError:  # pragma: no cover - older torch versions
+    from torch.library import Library
+
+    infer_schema = None  # type: ignore[assignment]
 
 import vllm.envs as envs
 
@@ -637,6 +644,14 @@ def direct_register_custom_op(
         from vllm.platforms import current_platform
 
         dispatch_key = current_platform.dispatch_key
+
+    if infer_schema is None:
+        logger = init_logger(__name__)
+        logger.warning(
+            "torch.library.infer_schema is unavailable; skipping custom op %s",
+            op_name,
+        )
+        return
 
     schema_str = infer_schema(op_func, mutates_args=mutates_args)
 

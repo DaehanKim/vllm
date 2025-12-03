@@ -21,7 +21,13 @@ os.environ["PYTORCH_NVML_BASED_CUDA_CHECK"] = "1"
 # see https://github.com/vllm-project/vllm/issues/10480
 os.environ["TORCHINDUCTOR_COMPILE_THREADS"] = "1"
 # see https://github.com/vllm-project/vllm/issues/10619
-torch._inductor.config.compile_threads = 1
+try:
+    torch_inductor = getattr(torch, "_inductor")
+    torch_inductor_config = getattr(torch_inductor, "config", None)
+    if torch_inductor_config is not None:
+        setattr(torch_inductor_config, "compile_threads", 1)
+except AttributeError:
+    logger.debug("torch._inductor.config not available; skipping thread override.")
 
 # ===================================================
 # torch 2.9 Inductor PythonWrapperCodegen monkeypatch
