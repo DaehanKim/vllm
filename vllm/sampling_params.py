@@ -401,7 +401,20 @@ class SamplingParams(
             )
         if not 0.0 <= self.min_p <= 1.0:
             raise ValueError(f"min_p must be in [0, 1], got {self.min_p}.")
-        if self.max_tokens is not None and self.max_tokens < 1:
+        allow_zero_max_tokens = False
+        if self.extra_args:
+            # full logprobs teacher mode requires max_tokens==0; allow that case
+            full_lp_cfg = self.extra_args.get("full_logprobs")
+            if isinstance(full_lp_cfg, dict) and full_lp_cfg.get("enabled"):
+                allow_zero_max_tokens = True
+
+        if self.max_tokens is not None and self.max_tokens < 0:
+            raise ValueError(f"max_tokens must be non-negative, got {self.max_tokens}.")
+        if (
+            self.max_tokens is not None
+            and self.max_tokens < 1
+            and not allow_zero_max_tokens
+        ):
             raise ValueError(f"max_tokens must be at least 1, got {self.max_tokens}.")
         if self.min_tokens < 0:
             raise ValueError(
