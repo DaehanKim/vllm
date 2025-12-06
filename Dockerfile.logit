@@ -1,0 +1,44 @@
+# Minimal image that pre-installs the provided vLLM wheel.
+# CUDA runtime image so it can run on GPU hosts.
+FROM nvidia/cuda:12.8.0-runtime-ubuntu24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install basic utilities, OpenSSH server, and Miniconda (Python 3.12)
+RUN apt-get update -y \
+    && apt-get install -y --no-install-recommends curl ca-certificates bzip2 openssh-server \
+    && curl -fsSL -o /tmp/miniconda.sh https://repo.anaconda.com/miniconda/Miniconda3-py312_24.9.2-0-Linux-x86_64.sh \
+    && bash /tmp/miniconda.sh -b -p /opt/conda \
+    && rm /tmp/miniconda.sh \
+    && /opt/conda/bin/conda clean -afy \
+    && mkdir -p /var/run/sshd \
+    && ssh-keygen -A \
+    && echo 'PermitRootLogin yes' >> /etc/ssh/sshd_config \
+    && apt-get purge -y curl bzip2 \
+    && apt-get autoremove -y \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV PATH="/opt/conda/bin:${PATH}"
+WORKDIR /opt/app
+
+# Preinstall vLLM runtime deps (CUDA build). Torch from cu128 index.
+COPY requirements/common.txt requirements/common.txt
+COPY requirements/cuda.txt requirements/cuda.txt
+RUN python -m pip install --no-cache-dir -r requirements/cuda.txt \
+    --extra-index-url https://download.pytorch.org/whl/cu128
+
+# Copy and install the provided wheel (no dependency resolution; install torch separately as needed)
+COPY vllm-0.1.dev11919+gdc6b8f6e5.d20251204.cu128-cp312-cp312-linux_x86_64.whl /tmp/
+RUN python -m pip install --no-cache-dir /tmp/vllm-0.1.dev11919+gdc6b8f6e5.d20251204.cu128-cp312-cp312-linux_x86_64.whl --no-deps \
+    && rm /tmp/vllm-0.1.dev11919+gdc6b8f6e5.d20251204.cu128-cp312-cp312-linux_x86_64.whl
+
+# SSH bootstrap: respects SSH_PUBLIC_KEY or RUNPOD_PUBLIC_KEY envs, starts sshd, then runs user command.
+COPY start-sshd.sh /usr/local/bin/start-sshd.sh
+RUN chmod +x /usr/local/bin/start-sshd.sh \
+    && echo 'export PATH="/opt/conda/bin:$PATH"' > /etc/profile.d/conda_path.sh \
+    && chmod +x /etc/profile.d/conda_path.sh \
+    && ln -sf /opt/conda/bin/python /usr/local/bin/python || true \
+    && ln -sf /opt/conda/bin/python3 /usr/local/bin/python3 || true \
+    && ln -sf /opt/conda/bin/vllm /usr/local/bin/vllm || true
+
+ENTRYPOINT ["bash", "/usr/local/bin/start-sshd.sh"]
