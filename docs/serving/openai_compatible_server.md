@@ -200,7 +200,7 @@ The following extra parameters are supported:
 
 #### Full logprobs teacher mode (experimental)
 
-vLLM can act as a forward-only “teacher” that returns full-vocabulary log-probabilities for every prompt token. This mode is disabled by default and must be explicitly enabled with `--enable-full-logprobs-api` because it increases model extraction risk.
+vLLM can act as a forward-only “teacher” that returns sparse top-p log-probabilities plus a tail-mass bucket for every prompt token. This mode is disabled by default and must be explicitly enabled with `--enable-full-logprobs-api` because it increases model extraction risk.
 
 - Only available when `max_tokens=0` and `stream=false`; `n` must be 1.
 - Strongly recommended to send prompts as token IDs to avoid tokenizer mismatches.
@@ -217,8 +217,10 @@ vLLM can act as a forward-only “teacher” that returns full-vocabulary log-pr
       "full_logprobs": {
         "enabled": true,
         "positions": [0, 2],        // optional subset; null/omitted returns all
+        "top_p": 0.9999,            // optional; defaults to 0.9999
+        "max_top_k": 512,           // optional; defaults to 512
         "dtype": "fp16",
-        "format": "base64_dense"
+        "format": "top_p"
       }
     }
   }
@@ -228,28 +230,26 @@ vLLM can act as a forward-only “teacher” that returns full-vocabulary log-pr
 
   ```json
   "full_logprobs": {
-    "shape": [2, V],
     "dtype": "fp16",
-    "format": "base64_dense",
-    "encoding": "base64",
+    "format": "top_p",
+    "top_p": 0.9999,
+    "max_top_k": 512,
     "positions": [0, 2],
-    "data": "<base64 of row-major little-endian fp16 matrix>"
+    "token_ids": [[123, 456], [789, 101]],
+    "logprobs": [[-0.1, -1.2], [-0.3, -2.0]],
+    "tail_mass": [0.0008, 0.0005]
   }
   ```
 
-  Decode on the client with:
-
-  ```python
-  import base64, numpy as np
-  raw = base64.b64decode(data)
-  arr = np.frombuffer(raw, dtype="<f2").reshape(L_eff, V)
-  ```
+  `token_ids[i]`, `logprobs[i]`, and `tail_mass[i]` align to `positions[i]`.
+  If `positions` is `null`, rows are ordered by absolute position `[0..L-1]`.
 
 Notes:
 
-- The matrix holds **normalized log-probabilities** (`log_softmax`), not logits.
+- The returned logprobs are **normalized log-probabilities** (`log_softmax`) for the top-p subset, not logits.
 - Chat completions support the same payload/semantics via `extra_body.full_logprobs`.
-- Host memory usage scales with `L * V` per request; use `positions` to reduce size.
+- Host memory usage scales with `L * K` per request; use `positions` or smaller
+  `top_p`/`max_top_k` to reduce size.
 
 More details: `docs/serving/full_logprobs_teacher_mode.md`.
 

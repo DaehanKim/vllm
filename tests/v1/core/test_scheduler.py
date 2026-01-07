@@ -16,7 +16,7 @@ from vllm.config import (
     SpeculativeConfig,
     VllmConfig,
 )
-from vllm.full_logprobs import FullLogprobsChunk
+from vllm.full_logprobs import FullLogprobsChunk, FullLogprobsRow
 from vllm.multimodal.inputs import (
     MultiModalFeatureSpec,
     MultiModalKwargsItem,
@@ -202,8 +202,16 @@ def test_scheduler_emits_full_logprobs_chunks():
     scheduler.add_request(request)
 
     output = scheduler.schedule()
-    chunk_data = np.zeros((1, 2), dtype=np.float16).tobytes()
-    chunk = FullLogprobsChunk(positions=[0], data=chunk_data)
+    chunk = FullLogprobsChunk(
+        rows=[
+            FullLogprobsRow(
+                position=0,
+                token_ids=[0, 1],
+                logprobs=[0.0, 0.0],
+                tail_mass=0.0,
+            )
+        ]
+    )
     model_runner_output = ModelRunnerOutput(
         req_ids=[request.request_id],
         req_id_to_index={request.request_id: 0},

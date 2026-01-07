@@ -50,7 +50,7 @@ from vllm.distributed.parallel_state import (
     prepare_communication_buffer_for_model,
 )
 from vllm.forward_context import BatchDescriptor, set_forward_context
-from vllm.full_logprobs import FullLogprobsChunk
+from vllm.full_logprobs import FullLogprobsChunk, FullLogprobsRow
 from vllm.logger import init_logger
 from vllm.model_executor.layers.attention_layer_base import AttentionLayerBase
 from vllm.model_executor.layers.rotary_embedding import (
@@ -3128,15 +3128,46 @@ class GPUModelRunner(
             offset = int(self.query_start_loc.np[req_index])
             prompt_hidden_states = hidden_states[offset : offset + chunk_len]
             logits = self.model.compute_logits(prompt_hidden_states)
-            logprobs = F.log_softmax(logits, dim=-1, dtype=torch.float32).to(
-                torch.float16
+            logprobs = F.log_softmax(logits, dim=-1, dtype=torch.float32)
+            vocab_size = logprobs.shape[-1]
+            top_p = params.top_p
+            max_top_k = params.max_top_k
+            top_k = min(max_top_k, vocab_size)
+            topk_logprobs, topk_indices = torch.topk(logprobs, k=top_k, dim=-1)
+            topk_probs = torch.exp(topk_logprobs)
+            cumulative = torch.cumsum(topk_probs, dim=-1)
+            top_p_tensor = torch.tensor(
+                top_p, dtype=cumulative.dtype, device=cumulative.device
             )
-            logprobs_cpu = logprobs.to("cpu", non_blocking=True).contiguous()
-            data = logprobs_cpu.numpy().tobytes()
-            positions = list(range(start_pos, start_pos + chunk_len))
-            chunks.setdefault(req_id, []).append(
-                FullLogprobsChunk(positions=positions, data=data)
+            counts = torch.sum(cumulative < top_p_tensor, dim=-1) + 1
+            counts = torch.clamp(counts, max=top_k)
+
+            topk_indices_cpu = topk_indices.to("cpu", non_blocking=True)
+            topk_logprobs_cpu = topk_logprobs.to(torch.float16).to(
+                "cpu", non_blocking=True
             )
+            cumulative_cpu = cumulative.to("cpu", non_blocking=True)
+            counts_cpu = counts.to("cpu", non_blocking=True)
+
+            rows: list[FullLogprobsRow] = []
+            for row_idx in range(chunk_len):
+                count = int(counts_cpu[row_idx].item())
+                token_ids = topk_indices_cpu[row_idx, :count].tolist()
+                row_logprobs = topk_logprobs_cpu[row_idx, :count].tolist()
+                included_mass = float(cumulative_cpu[row_idx, count - 1].item())
+                tail_mass = max(0.0, 1.0 - included_mass)
+                if tail_mass > 1.0:
+                    tail_mass = 1.0
+                rows.append(
+                    FullLogprobsRow(
+                        position=start_pos + row_idx,
+                        token_ids=token_ids,
+                        logprobs=row_logprobs,
+                        tail_mass=tail_mass,
+                    )
+                )
+
+            chunks.setdefault(req_id, []).append(FullLogprobsChunk(rows=rows))
 
         return chunks
 

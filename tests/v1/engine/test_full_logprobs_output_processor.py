@@ -1,13 +1,13 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
-import numpy as np
 import pytest
 
 from vllm.full_logprobs import (
     FullLogprobsBuffer,
     FullLogprobsChunk,
     FullLogprobsParams,
+    FullLogprobsRow,
 )
 from vllm.sampling_params import RequestOutputKind, SamplingParams
 from vllm.v1.engine import EngineCoreOutput, EngineCoreRequest, FinishReason
@@ -56,8 +56,13 @@ def test_full_logprobs_chunks_are_buffered():
     engine_request = _make_engine_request(request_id, params)
     output_processor.add_request(engine_request, prompt=None)
 
-    row = np.array([0.25, -0.5], dtype=np.float16)
-    chunk = FullLogprobsChunk(positions=[0], data=row.tobytes())
+    row = FullLogprobsRow(
+        position=0,
+        token_ids=[0, 1],
+        logprobs=[0.25, -0.5],
+        tail_mass=0.1,
+    )
+    chunk = FullLogprobsChunk(rows=[row])
     engine_output = EngineCoreOutput(
         request_id=request_id,
         new_token_ids=[],
@@ -65,8 +70,13 @@ def test_full_logprobs_chunks_are_buffered():
     )
 
     output_processor.process_outputs([engine_output])
-    dense = buffer.build_dense_array(request_id)
-    np.testing.assert_array_equal(dense, row.reshape(1, vocab_size))
+    positions, token_ids, logprobs, tail_mass = buffer.build_response_payload(
+        request_id
+    )
+    assert positions is None
+    assert token_ids == [[0, 1]]
+    assert logprobs == [[0.25, -0.5]]
+    assert tail_mass == [0.1]
 
 
 def test_full_logprobs_cleanup_on_finish():
@@ -83,8 +93,13 @@ def test_full_logprobs_cleanup_on_finish():
     )
     output_processor.add_request(_make_engine_request(request_id, params), prompt=None)
 
-    row = np.array([0.0, 1.0], dtype=np.float16)
-    chunk = FullLogprobsChunk(positions=[0], data=row.tobytes())
+    row = FullLogprobsRow(
+        position=0,
+        token_ids=[0, 1],
+        logprobs=[0.0, 1.0],
+        tail_mass=0.0,
+    )
+    chunk = FullLogprobsChunk(rows=[row])
     engine_output = EngineCoreOutput(
         request_id=request_id,
         new_token_ids=[],
@@ -94,8 +109,13 @@ def test_full_logprobs_cleanup_on_finish():
 
     output_processor.process_outputs([engine_output])
 
-    dense = buffer.build_dense_array(request_id)
-    np.testing.assert_array_equal(dense, row.reshape(1, vocab_size))
+    positions, token_ids, logprobs, tail_mass = buffer.build_response_payload(
+        request_id
+    )
+    assert positions is None
+    assert token_ids == [[0, 1]]
+    assert logprobs == [[0.0, 1.0]]
+    assert tail_mass == [0.0]
     output_processor._cleanup_full_logprobs(request_id)
     with pytest.raises(ValueError, match="full logprobs not registered"):
         buffer.params_for(request_id)

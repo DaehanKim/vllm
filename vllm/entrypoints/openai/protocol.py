@@ -239,11 +239,18 @@ class FullLogprobsRequest(OpenAIBaseModel):
             "Absolute token indices to compute, or None for the entire sequence."
         ),
     )
+    top_p: float = 0.9999
+    max_top_k: int = 512
     dtype: Literal["fp16"] = "fp16"
-    format: Literal["base64_dense"] = "base64_dense"
+    format: Literal["top_p"] = "top_p"
 
     @model_validator(mode="after")
     def validate_positions(self):
+        if self.enabled:
+            if not 0.0 < self.top_p <= 1.0:
+                raise ValueError("full_logprobs.top_p must be in (0, 1].")
+            if self.max_top_k < 1:
+                raise ValueError("full_logprobs.max_top_k must be >= 1.")
         if not self.enabled or self.positions is None:
             return self
         if len(self.positions) == 0:
@@ -263,12 +270,14 @@ class FullLogprobsRequest(OpenAIBaseModel):
 
 
 class FullLogprobsResponse(OpenAIBaseModel):
-    shape: tuple[int, int]
     dtype: Literal["fp16"] = "fp16"
-    format: Literal["base64_dense"] = "base64_dense"
-    encoding: Literal["base64"] = "base64"
+    format: Literal["top_p"] = "top_p"
+    top_p: float
+    max_top_k: int
     positions: list[int] | None = None
-    data: str
+    token_ids: list[list[int]]
+    logprobs: list[list[float]]
+    tail_mass: list[float]
 
 
 class FunctionDefinition(OpenAIBaseModel):

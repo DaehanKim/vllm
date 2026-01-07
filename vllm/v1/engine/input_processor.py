@@ -391,9 +391,8 @@ class InputProcessor:
         extra_args = sampling_params.extra_args
         if not extra_args:
             return None
-        # Do not remove full_logprobs from extra_args; it needs to survive
-        # serialization so SamplingParams validation on the worker still sees
-        # it and allows max_tokens==0 for teacher mode.
+        # Keep full_logprobs in extra_args so engine-side validation can accept
+        # max_tokens=0 after deserialization.
         payload = extra_args.get("full_logprobs")
         if payload is None:
             return None

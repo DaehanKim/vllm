@@ -25,6 +25,8 @@ def test_completion_request_accepts_full_logprobs() -> None:
     assert req.full_logprobs is not None
     assert req.full_logprobs.enabled is True
     assert req.full_logprobs.positions == [0, 2]
+    assert req.full_logprobs.top_p == 0.9999
+    assert req.full_logprobs.max_top_k == 512
 
 
 def test_completion_full_logprobs_requires_token_ids() -> None:
@@ -90,7 +92,14 @@ def test_chat_full_logprobs_requires_zero_tokens_and_single_choice() -> None:
 
 
 def test_response_choices_include_full_logprobs_payload() -> None:
-    payload = FullLogprobsResponse(shape=(1, 2), positions=[0], data="AAAA")
+    payload = FullLogprobsResponse(
+        positions=[0],
+        token_ids=[[1]],
+        logprobs=[[-0.25]],
+        tail_mass=[0.0],
+        top_p=0.9,
+        max_top_k=4,
+    )
 
     completion_choice = CompletionResponseChoice(
         index=0,
@@ -98,7 +107,7 @@ def test_response_choices_include_full_logprobs_payload() -> None:
         full_logprobs=payload,
     )
     assert completion_choice.full_logprobs is payload
-    assert completion_choice.full_logprobs.encoding == "base64"
+    assert completion_choice.full_logprobs.format == "top_p"
 
     chat_choice = ChatCompletionResponseChoice(
         index=0,

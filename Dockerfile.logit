@@ -4,9 +4,10 @@ FROM nvidia/cuda:12.8.0-runtime-ubuntu24.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install basic utilities, OpenSSH server, and Miniconda (Python 3.12)
+# Install basic utilities, compiler toolchain (for Torch/Triton JIT), OpenSSH server, and Miniconda (Python 3.12)
 RUN apt-get update -y \
-    && apt-get install -y --no-install-recommends curl ca-certificates bzip2 openssh-server \
+    && apt-get install -y --no-install-recommends \
+        curl ca-certificates bzip2 openssh-server build-essential \
     && curl -fsSL -o /tmp/miniconda.sh https://repo.anaconda.com/miniconda/Miniconda3-py312_24.9.2-0-Linux-x86_64.sh \
     && bash /tmp/miniconda.sh -b -p /opt/conda \
     && rm /tmp/miniconda.sh \
@@ -27,10 +28,10 @@ COPY requirements/cuda.txt requirements/cuda.txt
 RUN python -m pip install --no-cache-dir -r requirements/cuda.txt \
     --extra-index-url https://download.pytorch.org/whl/cu128
 
-# Copy and install the provided wheel (no dependency resolution; install torch separately as needed)
-COPY vllm-0.1.dev11919+gdc6b8f6e5.d20251204.cu128-cp312-cp312-linux_x86_64.whl /tmp/
-RUN python -m pip install --no-cache-dir /tmp/vllm-0.1.dev11919+gdc6b8f6e5.d20251204.cu128-cp312-cp312-linux_x86_64.whl --no-deps \
-    && rm /tmp/vllm-0.1.dev11919+gdc6b8f6e5.d20251204.cu128-cp312-cp312-linux_x86_64.whl
+# Install vLLM wheel directly from public S3 (no dependency resolution; deps preinstalled above)
+RUN python -m pip install --no-cache-dir \
+    "https://daehan-wheels.s3.ap-northeast-2.amazonaws.com/simple/vllm/vllm-0.1.dev11921%2Bg8a16d6bfa.d20260106.cu128-cp312-cp312-linux_x86_64.whl" \
+    --no-deps
 
 # SSH bootstrap: respects SSH_PUBLIC_KEY or RUNPOD_PUBLIC_KEY envs, starts sshd, then runs user command.
 COPY start-sshd.sh /usr/local/bin/start-sshd.sh
@@ -39,6 +40,9 @@ RUN chmod +x /usr/local/bin/start-sshd.sh \
     && chmod +x /etc/profile.d/conda_path.sh \
     && ln -sf /opt/conda/bin/python /usr/local/bin/python || true \
     && ln -sf /opt/conda/bin/python3 /usr/local/bin/python3 || true \
-    && ln -sf /opt/conda/bin/vllm /usr/local/bin/vllm || true
+    && ln -sf /opt/conda/bin/vllm /usr/local/bin/vllm || true \
+    && apt-get update -y \
+    && apt-get install -y --no-install-recommends build-essential \
+    && rm -rf /var/lib/apt/lists/*
 
 ENTRYPOINT ["bash", "/usr/local/bin/start-sshd.sh"]

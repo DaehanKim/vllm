@@ -1,10 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
-import base64
 from types import SimpleNamespace
 
-import numpy as np
 import pytest
 
 from vllm.entrypoints.openai.protocol import (
@@ -13,7 +11,12 @@ from vllm.entrypoints.openai.protocol import (
     RequestResponseMetadata,
 )
 from vllm.entrypoints.openai.serving_completion import OpenAIServingCompletion
-from vllm.full_logprobs import FullLogprobsBuffer, FullLogprobsChunk, FullLogprobsParams
+from vllm.full_logprobs import (
+    FullLogprobsBuffer,
+    FullLogprobsChunk,
+    FullLogprobsParams,
+    FullLogprobsRow,
+)
 from vllm.outputs import CompletionOutput, RequestOutput
 
 
@@ -22,8 +25,21 @@ def _make_buffer_with_rows(request_id: str, vocab_size: int) -> FullLogprobsBuff
     params = FullLogprobsParams(enabled=True, positions=[0, 2])
     buffer.register(request_id, vocab_size=vocab_size, params=params)
 
-    rows = np.array([[0.0, 1.0], [2.0, 3.0]], dtype=np.float16)
-    buffer.add_chunk(request_id, FullLogprobsChunk(positions=[0, 2], data=rows.tobytes()))
+    rows = [
+        FullLogprobsRow(
+            position=0,
+            token_ids=[0, 1],
+            logprobs=[0.0, 1.0],
+            tail_mass=0.0,
+        ),
+        FullLogprobsRow(
+            position=2,
+            token_ids=[0, 1],
+            logprobs=[2.0, 3.0],
+            tail_mass=0.1,
+        ),
+    ]
+    buffer.add_chunk(request_id, FullLogprobsChunk(rows=rows))
     return buffer
 
 
@@ -91,11 +107,12 @@ def test_completion_response_includes_full_logprobs_and_cleans_buffer():
 
     choice = response.choices[0]
     assert choice.full_logprobs is not None
-    assert choice.full_logprobs.shape == (2, vocab_size)
-    decoded = np.frombuffer(
-        base64.b64decode(choice.full_logprobs.data), dtype="<f2"
-    ).reshape(choice.full_logprobs.shape)
-    np.testing.assert_array_equal(decoded, np.array([[0.0, 1.0], [2.0, 3.0]], dtype=np.float16))
+    assert choice.full_logprobs.positions == [0, 2]
+    assert choice.full_logprobs.token_ids == [[0, 1], [0, 1]]
+    assert choice.full_logprobs.logprobs == [[0.0, 1.0], [2.0, 3.0]]
+    assert choice.full_logprobs.tail_mass == [0.0, 0.1]
+    assert choice.full_logprobs.top_p == 0.9999
+    assert choice.full_logprobs.max_top_k == 512
 
     assert cleanup_calls == [request_id]
     with pytest.raises(ValueError, match="full logprobs not registered"):

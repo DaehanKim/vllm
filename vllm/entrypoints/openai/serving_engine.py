@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 import asyncio
-import base64
 import json
 import sys
 import time
@@ -348,18 +347,19 @@ class OpenAIServing:
             )
 
         buffer = self.input_processor.full_logprobs_buffer
-        matrix = buffer.build_dense_array(request_id)
+        positions, token_ids, logprobs, tail_mass = buffer.build_response_payload(
+            request_id
+        )
         params = buffer.params_for(request_id)
-        matrix = np.array(matrix, dtype=np.dtype("<f2"), order="C", copy=False)
-        data = base64.b64encode(matrix.tobytes()).decode("ascii")
-        positions = list(params.positions) if params.positions is not None else None
         return FullLogprobsResponse(
-            shape=matrix.shape,
             dtype=params.dtype,
             format=params.format,
-            encoding="base64",
+            top_p=params.top_p,
+            max_top_k=params.max_top_k,
             positions=positions,
-            data=data,
+            token_ids=token_ids,
+            logprobs=logprobs,
+            tail_mass=tail_mass,
         )
 
     def _get_tool_parser(

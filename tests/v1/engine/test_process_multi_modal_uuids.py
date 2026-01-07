@@ -186,7 +186,8 @@ def test_process_inputs_produces_full_logprobs_params(monkeypatch):
     assert engine_request.full_logprobs_params.positions == [0, 1]
     assert engine_request.sampling_params is not None
     extra_args = engine_request.sampling_params.extra_args
-    assert extra_args is None or "full_logprobs" not in extra_args
+    assert extra_args is not None
+    assert extra_args.get("full_logprobs") == {"enabled": True, "positions": [0, 1]}
 
 
 def test_register_and_cleanup_full_logprobs_request(monkeypatch):

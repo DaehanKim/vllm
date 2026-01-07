@@ -2,11 +2,6 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
 
-import base64
-
-import numpy as np
-import base64
-
 import numpy as np
 import openai  # use the official client for correctness check
 import pytest
@@ -701,11 +696,13 @@ async def test_invalid_grammar(client: openai.AsyncOpenAI, model_name: str):
         )
 
 
-def _decode_full_logprobs(choice) -> np.ndarray:
+def _assert_full_logprobs_mass(choice) -> None:
     assert choice.full_logprobs is not None
-    shape = tuple(choice.full_logprobs.shape)
-    raw = base64.b64decode(choice.full_logprobs.data)
-    return np.frombuffer(raw, dtype="<f2").reshape(shape)
+    for row_logprobs, tail_mass in zip(
+        choice.full_logprobs.logprobs, choice.full_logprobs.tail_mass
+    ):
+        total_mass = float(np.exp(np.array(row_logprobs)).sum()) + tail_mass
+        np.testing.assert_allclose(total_mass, 1.0, rtol=1e-2, atol=1e-2)
 
 
 @pytest.mark.asyncio
@@ -722,13 +719,15 @@ async def test_full_logprobs_token_ids(client: openai.AsyncOpenAI):
     choice = completion.choices[0]
     full_lp = choice.full_logprobs
     assert full_lp is not None
-    assert tuple(full_lp.shape) == (2, full_lp.shape[1])
     assert full_lp.positions == [0, 2]
+    assert len(full_lp.token_ids) == 2
+    assert len(full_lp.logprobs) == 2
+    assert len(full_lp.tail_mass) == 2
+    for token_ids, logprobs in zip(full_lp.token_ids, full_lp.logprobs):
+        assert len(token_ids) == len(logprobs)
+        assert 1 <= len(token_ids) <= full_lp.max_top_k
 
-    matrix = _decode_full_logprobs(choice)
-    assert matrix.shape[0] == 2
-    np.testing.assert_allclose(np.exp(matrix[0]).sum(), 1.0, rtol=1e-2, atol=1e-2)
-    np.testing.assert_allclose(np.exp(matrix[1]).sum(), 1.0, rtol=1e-2, atol=1e-2)
+    _assert_full_logprobs_mass(choice)
 
     assert completion.usage.completion_tokens == 0
     assert completion.usage.prompt_tokens == len(prompt_ids)
@@ -752,11 +751,12 @@ async def test_full_logprobs_text_prompt(client: openai.AsyncOpenAI):
     choice = completion.choices[0]
     full_lp = choice.full_logprobs
     assert full_lp is not None
-    assert tuple(full_lp.shape)[0] == expected_len
     assert full_lp.positions is None
+    assert len(full_lp.token_ids) == expected_len
+    assert len(full_lp.logprobs) == expected_len
+    assert len(full_lp.tail_mass) == expected_len
 
-    matrix = _decode_full_logprobs(choice)
-    np.testing.assert_allclose(np.exp(matrix[0]).sum(), 1.0, rtol=1e-2, atol=1e-2)
+    _assert_full_logprobs_mass(choice)
     assert completion.usage.completion_tokens == 0
     assert completion.usage.prompt_tokens == expected_len
     assert completion.usage.total_tokens == expected_len
@@ -781,6 +781,8 @@ def test_completion_sampling_params_include_full_logprobs_extra_args() -> None:
     assert payload == {
         "enabled": True,
         "positions": [0, 1],
+        "top_p": 0.9999,
+        "max_top_k": 512,
         "dtype": "fp16",
-        "format": "base64_dense",
+        "format": "top_p",
     }
