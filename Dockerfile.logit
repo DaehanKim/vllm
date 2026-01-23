@@ -39,3 +39,10 @@ RUN echo 'export PATH="/opt/conda/bin:$PATH"' > /etc/profile.d/conda_path.sh \
     && ln -sf /opt/conda/bin/python /usr/local/bin/python || true \
     && ln -sf /opt/conda/bin/python3 /usr/local/bin/python3 || true \
     && ln -sf /opt/conda/bin/vllm /usr/local/bin/vllm || true
+
+# SSH bootstrap: respects SSH_PUBLIC_KEY or RUNPOD_PUBLIC_KEY envs, starts sshd,
+# and runs the provided command (if any).
+COPY start-sshd.sh /usr/local/bin/start-sshd.sh
+RUN chmod +x /usr/local/bin/start-sshd.sh
+
+ENTRYPOINT ["/usr/local/bin/start-sshd.sh"]
