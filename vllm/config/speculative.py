@@ -847,7 +847,8 @@ class SpeculativeConfig:
                     self.method = "dflash"
                 elif (
                     "dspark" in self.draft_model_config.model.lower()
-                    or "Qwen3DSparkModel" in self.draft_model_config.architectures
+                    or self.draft_model_config.hf_config.architectures[0]
+                    in ("Qwen3DSparkModel", "Gemma4DSparkModel")
                 ):
                     self.method = "dspark"
                 elif self.draft_model_config.hf_config.model_type == "medusa":
@@ -896,8 +897,10 @@ class SpeculativeConfig:
                         self.draft_model_config.hf_config = eagle_config
                         self.update_arch_()
 
-                if self.method == "dspark" and (
-                    "Qwen3DSparkModel" not in self.draft_model_config.architectures
+                dspark_arch = self.draft_model_config.hf_config.architectures[0]
+                if self.method == "dspark" and dspark_arch not in (
+                    "Qwen3DSparkModel",
+                    "Gemma4DSparkModel",
                 ):
                     # DeepSeek-V4 DSpark reuses the full DeepSeek-V4 config
                     # and its weights ship in the target checkpoint.
@@ -906,6 +909,24 @@ class SpeculativeConfig:
                         "DSparkDraftModel"
                     ]
                     self.update_arch_()
+                elif self.method == "dspark" and dspark_arch == "Gemma4DSparkModel":
+                    # Self-contained Gemma4 DSpark draft. Normalize the two config
+                    # keys that differ from the DSV4/Qwen3 DSpark conventions:
+                    #   target_layer_ids -> dspark_target_layer_ids (read by
+                    #     eagle3_utils to set the target's aux hidden-state layers)
+                    #   block_size       -> n_predict (the draft block length, i.e.
+                    #     num_speculative_tokens, derived just below)
+                    hf = self.draft_model_config.hf_config
+                    if (
+                        getattr(hf, "dspark_target_layer_ids", None) is None
+                        and getattr(hf, "target_layer_ids", None) is not None
+                    ):
+                        hf.dspark_target_layer_ids = hf.target_layer_ids
+                    if (
+                        getattr(hf, "n_predict", None) is None
+                        and getattr(hf, "block_size", None) is not None
+                    ):
+                        hf.n_predict = hf.block_size
 
                 if self.method in ("dflash", "dspark"):
                     self.parallel_drafting = True
