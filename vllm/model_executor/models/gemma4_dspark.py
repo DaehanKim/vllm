@@ -51,10 +51,35 @@ from vllm.model_executor.layers.vocab_parallel_embedding import (
 )
 from vllm.model_executor.model_loader.weight_utils import default_weight_loader
 
-from .qwen3_dspark import DSparkConfidenceHead, DSparkMarkovHead
+from .qwen3_dspark import DSparkMarkovHead
 from .utils import extract_layer_index, maybe_prefix
 
 logger = init_logger(__name__)
+
+
+class DSparkConfidenceHead(nn.Module):
+    """Compatibility copy of the confidence head used by the Gemma4 branch.
+
+    The Gemma4 development commit predates the v0.25.1 Qwen3 DSpark API, whose
+    stable module does not export this head yet.
+    """
+
+    def __init__(self, input_dim: int, prefix: str, bias: bool = False) -> None:
+        super().__init__()
+        self.proj = ReplicatedLinear(
+            input_dim,
+            1,
+            bias=bias,
+            return_bias=False,
+            params_dtype=torch.float32,
+            prefix=maybe_prefix(prefix, "proj"),
+        )
+
+    def forward(
+        self, hidden: torch.Tensor, markov_embed: torch.Tensor
+    ) -> torch.Tensor:
+        x = torch.cat([hidden, markov_embed], dim=-1).float()
+        return self.proj(x).squeeze(-1)
 
 
 def _layer_head_dim(config, layer_idx: int) -> tuple[int, int, bool]:
@@ -367,6 +392,7 @@ class Gemma4DSparkModel(nn.Module):
 
         # DSpark heads (shared definitions with the Qwen3 DSpark model).
         self.markov_head = DSparkMarkovHead(
+            config.vocab_size,
             config.vocab_size,
             config.markov_rank,
             prefix=maybe_prefix(prefix, "markov_head"),
