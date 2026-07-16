@@ -1,0 +1,16 @@
+FROM vllm/vllm-openai:v0.25.1
+
+COPY vllm/config/speculative.py /tmp/gemma4-dspark-patch/vllm/config/speculative.py
+COPY vllm/model_executor/models/gemma4_dspark.py /tmp/gemma4-dspark-patch/vllm/model_executor/models/gemma4_dspark.py
+COPY vllm/model_executor/models/registry.py /tmp/gemma4-dspark-patch/vllm/model_executor/models/registry.py
+
+RUN site_dir="$(python3 -c 'import os, vllm; print(os.path.dirname(vllm.__file__))')" \
+    && cp /tmp/gemma4-dspark-patch/vllm/config/speculative.py "${site_dir}/config/speculative.py" \
+    && cp /tmp/gemma4-dspark-patch/vllm/model_executor/models/gemma4_dspark.py "${site_dir}/model_executor/models/gemma4_dspark.py" \
+    && cp /tmp/gemma4-dspark-patch/vllm/model_executor/models/registry.py "${site_dir}/model_executor/models/registry.py" \
+    && python3 -m py_compile \
+        "${site_dir}/config/speculative.py" \
+        "${site_dir}/model_executor/models/gemma4_dspark.py" \
+        "${site_dir}/model_executor/models/registry.py"
+
+LABEL ai.vllm.gemma4-dspark.commit="1658dca301339d3a90c266ab40a56e65e9580eef"
