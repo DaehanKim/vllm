@@ -447,6 +447,8 @@ class Gemma4DSparkForCausalLM(nn.Module):
     # Self-contained checkpoint: own embed_tokens / lm_head (not aliased from
     # the target). See load_dspark_model.
     dspark_shares_target_embeddings = False
+    has_own_embed_tokens = True
+    has_own_lm_head = True
     packed_modules_mapping = {"gate_up_proj": ["gate_proj", "up_proj"]}
 
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = "") -> None:
@@ -455,7 +457,10 @@ class Gemma4DSparkForCausalLM(nn.Module):
         self.draft_model_config = vllm_config.speculative_config.draft_model_config
         self.config = self.draft_model_config.hf_config
         self.model = Gemma4DSparkModel(
-            vllm_config=vllm_config, prefix=maybe_prefix(prefix, "model")
+            vllm_config=vllm_config,
+            # v0.25.1 requires globally unique Attention layer names. Keep the
+            # draft cache namespace separate from the target's `model.layers`.
+            prefix=maybe_prefix(prefix, "draft_model"),
         )
         self.lm_head = ParallelLMHead(
             self.config.vocab_size,
@@ -466,6 +471,8 @@ class Gemma4DSparkForCausalLM(nn.Module):
             self.config.vocab_size,
             soft_cap=getattr(self.config, "final_logit_softcapping", None),
         )
+        # This checkpoint uses the full target vocabulary.
+        self.draft_id_to_target_id = None
 
     # --- Hooks used by the DSpark speculator ------------------------------
 
@@ -498,6 +505,13 @@ class Gemma4DSparkForCausalLM(nn.Module):
 
     def compute_logits(self, hidden_states: torch.Tensor) -> torch.Tensor:
         return self.logits_processor(self.lm_head, hidden_states)
+
+    # v0.25.1's stable DSpark speculator uses these two compatibility hooks.
+    def compute_draft_logits(self, hidden_states: torch.Tensor) -> torch.Tensor:
+        return self.compute_logits(hidden_states)
+
+    def map_draft_to_target(self, draft_ids: torch.Tensor) -> torch.Tensor:
+        return draft_ids
 
     def markov_embed(self, token_ids: torch.Tensor) -> torch.Tensor:
         return self.model.markov_head.embed(token_ids)
